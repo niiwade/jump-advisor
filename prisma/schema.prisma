@@ -1,0 +1,194 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model for authentication
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  tasks         Task[]
+  instructions  Instruction[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?  @db.Text
+  access_token       String?  @db.Text
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?  @db.Text
+  session_state      String?
+  oauth_token_secret String?
+  oauth_token        String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// Task model for agent tasks
+model Task {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  description String?   @db.Text
+  status      TaskStatus @default(PENDING)
+  type        TaskType
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  WAITING_FOR_RESPONSE
+}
+
+enum TaskType {
+  EMAIL
+  CALENDAR
+  HUBSPOT
+  GENERAL
+}
+
+// Instruction model for ongoing instructions
+model Instruction {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instruction String    @db.Text
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// RAG models for vector search
+model EmailDocument {
+  id          String    @id @default(cuid())
+  emailId     String    @unique
+  userId      String
+  subject     String
+  content     String    @db.Text
+  sender      String
+  recipients  String[]
+  sentAt      DateTime
+  embedding   Unsupported("vector")?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model HubspotContact {
+  id          String    @id @default(cuid())
+  hubspotId   String    @unique
+  userId      String
+  email       String?
+  firstName   String?
+  lastName    String?
+  properties  Json?
+  notes       HubspotNote[]
+  embedding   Unsupported("vector")?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model HubspotNote {
+  id          String    @id @default(cuid())
+  hubspotId   String    @unique
+  contactId   String
+  contact     HubspotContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  content     String    @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  embedding   Unsupported("vector")?
+}
+
+model CalendarEvent {
+  id          String    @id @default(cuid())
+  eventId     String    @unique
+  userId      String
+  title       String
+  description String?   @db.Text
+  location    String?
+  startTime   DateTime
+  endTime     DateTime
+  attendees   String[]
+  embedding   Unsupported("vector")?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// Chat history for conversation memory
+model ChatMessage {
+  id          String    @id @default(cuid())
+  userId      String
+  role        String    // user or assistant
+  content     String    @db.Text
+  createdAt   DateTime  @default(now())
+}
+
+// Ingestion status for tracking data imports
+model IngestionStatus {
+  id          String    @id @default(cuid())
+  userId      String
+  type        IngestionType
+  status      IngestionStatusType @default(PENDING)
+  progress    Int       @default(0)
+  total       Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+enum IngestionType {
+  EMAIL
+  CALENDAR
+  HUBSPOT
+  ALL
+}
+
+enum IngestionStatusType {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
