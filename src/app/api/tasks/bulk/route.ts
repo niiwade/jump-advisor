@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/auth-options";
 import { prisma } from "@/lib/db/prisma";
+import { TaskStatus, TaskType, Prisma } from "@prisma/client";
 
 // POST to update multiple tasks at once
 export async function POST(req: NextRequest) {
@@ -19,8 +20,8 @@ export async function POST(req: NextRequest) {
     const userId = session.user.id as string;
     const { taskIds, status, metadata }: { 
       taskIds: string[]; 
-      status?: string; 
-      metadata?: Record<string, unknown>; 
+      status?: TaskStatus; 
+      metadata?: Prisma.InputJsonValue; 
     } = await req.json();
     
     // Validate input
@@ -47,16 +48,12 @@ export async function POST(req: NextRequest) {
     }
     
     // Update all tasks
-    const updateData: {
-      status?: string;
-      metadata?: Record<string, unknown>;
-      completedAt?: Date;
-    } = {};
+    const updateData: Prisma.TaskUpdateInput = {};
     if (status) updateData.status = status;
     if (metadata) updateData.metadata = metadata;
     
     // If marking as completed, set completedAt
-    if (status === "COMPLETED") {
+    if (status === TaskStatus.COMPLETED) {
       updateData.completedAt = new Date();
     }
     
@@ -64,7 +61,7 @@ export async function POST(req: NextRequest) {
       taskIds.map(async (taskId: string) => {
         return prisma.task.update({
           where: { id: taskId },
-          data: updateData,
+          data: updateData as Prisma.TaskUpdateInput,
         });
       })
     );
@@ -99,15 +96,17 @@ export async function GET(req: NextRequest) {
     
     // Get query parameters
     const url = new URL(req.url);
-    const status: string | null = url.searchParams.get("status");
-    const type: string | null = url.searchParams.get("type");
+    const statusParam: string | null = url.searchParams.get("status");
+    const status = statusParam ? statusParam as TaskStatus : undefined;
+    const typeParam: string | null = url.searchParams.get("type");
+    const type = typeParam ? typeParam as TaskType : undefined;
     const limit: number = parseInt(url.searchParams.get("limit") || "10");
     
     // Build where clause
     const where: { 
       userId: string;
-      status?: string;
-      type?: string;
+      status?: TaskStatus;
+      type?: TaskType;
     } = { userId };
     if (status) where.status = status;
     if (type) where.type = type;

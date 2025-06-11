@@ -113,7 +113,7 @@ model EmailDocument {
   sender      String
   recipients  String[]
   sentAt      DateTime
-  embedding   Unsupported("vector")?
+  embedding   Json?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 }
@@ -127,7 +127,7 @@ model HubspotContact {
   lastName    String?
   properties  Json?
   notes       HubspotNote[]
-  embedding   Unsupported("vector")?
+  embedding   Json?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 }
@@ -140,7 +140,7 @@ model HubspotNote {
   content     String    @db.Text
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
-  embedding   Unsupported("vector")?
+  embedding   Json?
 }
 
 model CalendarEvent {
@@ -153,7 +153,7 @@ model CalendarEvent {
   startTime   DateTime
   endTime     DateTime
   attendees   String[]
-  embedding   Unsupported("vector")?
+  embedding   Json?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 }

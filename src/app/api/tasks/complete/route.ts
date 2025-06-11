@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/auth-options";
 import { prisma } from "@/lib/db/prisma";
+import { TaskStatus, TaskType } from "@prisma/client";
 
 // POST to mark a task as completed
 export async function POST(req: NextRequest) {
@@ -54,13 +55,16 @@ export async function POST(req: NextRequest) {
         id: taskId,
       },
       data: {
-        status: "COMPLETED",
+        status: TaskStatus.COMPLETED,
         completedAt: new Date(),
-        metadata: {
-          ...existingTask.metadata,
+        metadata: existingTask.metadata ? {
+          ...(existingTask.metadata as Record<string, unknown>),
+          result: result || "Task completed successfully",
+        } : {
           result: result || "Task completed successfully",
         },
       },
+
     });
     
     return NextResponse.json({
@@ -94,16 +98,17 @@ export async function GET(req: NextRequest) {
     // Get query parameters
     const url = new URL(req.url);
     const limit = parseInt(url.searchParams.get("limit") || "10");
-    const type = url.searchParams.get("type");
+    const typeParam = url.searchParams.get("type");
+    const type = typeParam ? typeParam as TaskType : undefined;
     
     // Build where clause
     const where: { 
       userId: string;
-      status: string;
-      type?: string;
+      status: TaskStatus;
+      type?: TaskType;
     } = { 
       userId,
-      status: "COMPLETED"
+      status: TaskStatus.COMPLETED
     };
     
     if (type) where.type = type;
