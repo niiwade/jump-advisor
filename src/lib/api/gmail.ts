@@ -107,7 +107,31 @@ export async function importEmails(userId: string) {
       const subject = headers.find(h => h.name === "Subject")?.value || "";
       const from = headers.find(h => h.name === "From")?.value || "";
       const to = headers.find(h => h.name === "To")?.value || "";
-      const date = headers.find(h => h.name === "Date")?.value || "";
+      const dateHeader = headers.find(h => h.name === "Date")?.value || "";
+      
+      // Parse email date safely
+      function parseEmailDate(dateStr: string): Date {
+        if (!dateStr) return new Date(); // Default to current date if empty
+        
+        try {
+          // Try standard date parsing
+          const parsedDate = new Date(dateStr);
+          
+          // Check if the date is valid
+          if (!isNaN(parsedDate.getTime())) {
+            return parsedDate;
+          }
+          
+          // If we get here, the date wasn't parsed correctly
+          console.warn(`Invalid date format: ${dateStr}, using current date instead`);
+          return new Date();
+        } catch (error) {
+          console.warn(`Error parsing date: ${dateStr}`, error);
+          return new Date(); // Fallback to current date
+        }
+      }
+      
+      const date = parseEmailDate(dateHeader);
 
       // Extract email body
       let body = "";
@@ -125,16 +149,28 @@ export async function importEmails(userId: string) {
       const content = `Subject: ${subject}\n\nFrom: ${from}\n\nBody: ${body}`;
       const embedding = await generateEmbedding(content);
 
-      // Store in database
-      await prisma.emailDocument.create({
-        data: {
+      // Store in database - use upsert to handle duplicate emails
+      await prisma.emailDocument.upsert({
+        where: {
+          emailId: message.id!
+        },
+        update: {
+          subject,
+          content: body,
+          sender: from,
+          recipients: [to],
+          sentAt: date,
+          embedding,
+          updatedAt: new Date()
+        },
+        create: {
           emailId: message.id!,
           userId,
           subject,
           content: body,
           sender: from,
           recipients: [to],
-          sentAt: new Date(date),
+          sentAt: date,
           embedding, // This would be stored using pgvector in a real implementation
         },
       });
@@ -153,8 +189,14 @@ export async function importEmails(userId: string) {
   }
 }
 
+// Interface for email webhook data
+interface EmailWebhookData {
+  messageId: string;
+  // Add other properties as needed based on the actual structure
+}
+
 // Listen for new emails (webhook handler)
-export async function handleNewEmail(userId: string, emailData: any) {
+export async function handleNewEmail(userId: string, emailData: EmailWebhookData) {
   try {
     const gmail = await getGmailClient(userId);
 
@@ -169,7 +211,31 @@ export async function handleNewEmail(userId: string, emailData: any) {
     const subject = headers.find(h => h.name === "Subject")?.value || "";
     const from = headers.find(h => h.name === "From")?.value || "";
     const to = headers.find(h => h.name === "To")?.value || "";
-    const date = headers.find(h => h.name === "Date")?.value || "";
+    const dateHeader = headers.find(h => h.name === "Date")?.value || "";
+    
+    // Parse email date safely
+    function parseEmailDate(dateStr: string): Date {
+      if (!dateStr) return new Date(); // Default to current date if empty
+      
+      try {
+        // Try standard date parsing
+        const parsedDate = new Date(dateStr);
+        
+        // Check if the date is valid
+        if (!isNaN(parsedDate.getTime())) {
+          return parsedDate;
+        }
+        
+        // If we get here, the date wasn't parsed correctly
+        console.warn(`Invalid date format: ${dateStr}, using current date instead`);
+        return new Date();
+      } catch (error) {
+        console.warn(`Error parsing date: ${dateStr}`, error);
+        return new Date(); // Fallback to current date
+      }
+    }
+    
+    const date = parseEmailDate(dateHeader);
 
     // Extract email body
     let body = "";
@@ -196,7 +262,7 @@ export async function handleNewEmail(userId: string, emailData: any) {
         content: body,
         sender: from,
         recipients: [to],
-        sentAt: new Date(date),
+        sentAt: date,
         embedding, // This would be stored using pgvector in a real implementation
       },
     });

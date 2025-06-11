@@ -3,11 +3,13 @@
 
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgvector(version: "0.5.1")]
 }
 
 // User model for authentication
@@ -113,7 +115,7 @@ model EmailDocument {
   sender      String
   recipients  String[]
   sentAt      DateTime
-  embedding   Json?
+  embedding   Unsupported("vector(1536)")
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 }
@@ -127,7 +129,7 @@ model HubspotContact {
   lastName    String?
   properties  Json?
   notes       HubspotNote[]
-  embedding   Json?
+  embedding   Unsupported("vector(1536)")
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 }
@@ -140,7 +142,7 @@ model HubspotNote {
   content     String    @db.Text
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
-  embedding   Json?
+  embedding   Unsupported("vector(1536)")
 }
 
 model CalendarEvent {
@@ -153,7 +155,7 @@ model CalendarEvent {
   startTime   DateTime
   endTime     DateTime
   attendees   String[]
-  embedding   Json?
+  embedding   Unsupported("vector(1536)")
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 }

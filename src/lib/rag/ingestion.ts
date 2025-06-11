@@ -198,7 +198,7 @@ export async function ingestCalendarEvents(userId: string): Promise<TaskResult> 
     });
     
         // Handle result based on success property
-    if (result.success) {
+    if (isSuccessResult(result)) {
       return {
         success: true,
         taskId: task.id,
