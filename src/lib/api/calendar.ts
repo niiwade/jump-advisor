@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { generateEmbedding } from "@/lib/rag/embeddings";
 
 // Function to get Calendar client for a user
-async function getCalendarClient(userId: string) {
+export async function getCalendarClient(userId: string) {
   // Get the user's Google OAuth tokens
   const account = await prisma.account.findFirst({
     where: {
@@ -54,8 +54,8 @@ export async function getAvailableTimes(
     const busySlots = busyTimesResponse.data.calendars?.primary?.busy || [];
 
     // Convert start and end dates to Date objects
-    const start = new Date(startDate);
-    const end = new Date(endDate);
+    const start = new Date(startDate || new Date());
+    const end = new Date(endDate || new Date());
 
     // Define working hours (9 AM to 5 PM)
     const workingHourStart = 9;
@@ -75,8 +75,8 @@ export async function getAvailableTimes(
         
         // Check if slot overlaps with any busy time
         const isOverlapping = busySlots.some(busy => {
-          const busyStart = new Date(busy.start);
-          const busyEnd = new Date(busy.end);
+          const busyStart = new Date(busy.start || new Date());
+          const busyEnd = new Date(busy.end || new Date());
           return (
             (currentDate >= busyStart && currentDate < busyEnd) ||
             (slotEnd > busyStart && slotEnd <= busyEnd) ||
@@ -207,8 +207,8 @@ export async function importCalendarEvents(userId: string) {
           title: event.summary || "Untitled Event",
           description: event.description || "",
           location: event.location || "",
-          startTime: new Date(event.start?.dateTime || event.start?.date || ""),
-          endTime: new Date(event.end?.dateTime || event.end?.date || ""),
+          startTime: new Date(event.start?.dateTime || event.start?.date || new Date()),
+          endTime: new Date(event.end?.dateTime || event.end?.date || new Date()),
           attendees: event.attendees?.map(a => a.email || "") || [],
           embedding, // This would be stored using pgvector in a real implementation
         },
@@ -229,7 +229,7 @@ export async function importCalendarEvents(userId: string) {
 }
 
 // Handle new calendar event (webhook handler)
-export async function handleNewCalendarEvent(userId: string, eventData: any) {
+export async function handleNewCalendarEvent(userId: string, eventData: { eventId: string }) {
   try {
     const calendar = await getCalendarClient(userId);
 
@@ -253,8 +253,8 @@ export async function handleNewCalendarEvent(userId: string, eventData: any) {
         title: event.data.summary || "Untitled Event",
         description: event.data.description || "",
         location: event.data.location || "",
-        startTime: new Date(event.data.start?.dateTime || event.data.start?.date || ""),
-        endTime: new Date(event.data.end?.dateTime || event.data.end?.date || ""),
+        startTime: new Date(event.data.start?.dateTime || event.data.start?.date || new Date()),
+        endTime: new Date(event.data.end?.dateTime || event.data.end?.date || new Date()),
         attendees: event.data.attendees?.map(a => a.email || "") || [],
         embedding, // This would be stored using pgvector in a real implementation
       },

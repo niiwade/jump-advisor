@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { generateEmbedding } from "@/lib/rag/embeddings";
 
 // Function to get Gmail client for a user
-async function getGmailClient(userId: string) {
+export async function getGmailClient(userId: string) {
   // Get the user's Google OAuth tokens
   const account = await prisma.account.findFirst({
     where: {

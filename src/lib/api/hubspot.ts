@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { generateEmbedding } from "@/lib/rag/embeddings";
 
 // Function to get HubSpot API client for a user
-async function getHubspotClient(userId: string) {
+export async function getHubspotClient(userId: string) {
   // Get the user's HubSpot OAuth tokens
   const account = await prisma.account.findFirst({
     where: {
@@ -259,7 +259,7 @@ export async function importHubspotContacts(userId: string) {
 }
 
 // Handle new contact creation in HubSpot (webhook handler)
-export async function handleNewHubspotContact(userId: string, contactData: any) {
+export async function handleNewHubspotContact(userId: string, contactData: { objectId: string }) {
   try {
     const hubspot = await getHubspotClient(userId);
 
