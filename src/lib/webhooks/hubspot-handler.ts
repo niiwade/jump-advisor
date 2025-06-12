@@ -3,6 +3,98 @@ import { getHubspotClient } from "@/lib/api/hubspot";
 import { generateEmbedding } from "@/lib/rag/search";
 import { processUserRequest } from "@/lib/agents/financial-advisor-agent";
 
+// Type definitions for HubSpot data
+import { AxiosInstance } from 'axios';
+
+// Define a custom type for the HubSpot client that extends AxiosInstance
+type HubspotClient = AxiosInstance & {
+  crm: {
+    contacts: {
+      basicApi: {
+        getById: (id: string, properties: string[]) => Promise<{ body: HubspotContact }>
+      }
+    },
+    notes: {
+      basicApi: {
+        getById: (id: string) => Promise<{ body: HubspotNote }>
+      }
+    },
+    deals: {
+      basicApi: {
+        getById: (id: string, properties?: string[]) => Promise<{ body: HubspotDeal }>
+      }
+    },
+    objects: {
+      notes: {
+        basicApi: {
+          getById: (id: string) => Promise<{ body: HubspotNote }>
+        },
+        associationsApi: {
+          getAll: (id: string, toObjectType: string) => Promise<{ 
+            body: { 
+              results: Array<{ id: string }> 
+            } 
+          }>
+        }
+      }
+    }
+  }
+};
+
+// Define the structure of HubSpot event data
+interface HubspotEventData {
+  objectId: string;
+  objectType: string;
+  eventType: string;
+  subscriptionType?: string;
+  [key: string]: unknown; // Allow for additional properties with safer unknown type
+}
+
+// Define the structure of HubSpot contact data
+interface HubspotContact {
+  id: string;
+  properties: {
+    firstname?: string;
+    lastname?: string;
+    email?: string;
+    phone?: string;
+    company?: string;
+    website?: string;
+    address?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+    [key: string]: string | undefined;
+  };
+}
+
+// Define the structure of HubSpot note data
+interface HubspotNote {
+  id: string;
+  properties: {
+    hs_note_body?: string;
+    hs_timestamp?: string;
+    [key: string]: string | undefined;
+  };
+  associations?: {
+    contacts?: {
+      results: Array<{ id: string }>
+    }
+  };
+}
+
+// Define the structure of HubSpot deal data
+interface HubspotDeal {
+  id: string;
+  properties: {
+    dealname?: string;
+    amount?: string;
+    closedate?: string;
+    dealstage?: string;
+    [key: string]: string | undefined;
+  };
+}
+
 /**
  * Process a HubSpot event notification
  * 
@@ -11,7 +103,7 @@ import { processUserRequest } from "@/lib/agents/financial-advisor-agent";
  */
 export async function processHubspotEvent(
   userId: string,
-  eventData: any
+  eventData: HubspotEventData
 ): Promise<void> {
   try {
     console.log(`Processing HubSpot event for user ${userId}`, eventData);
@@ -29,7 +121,8 @@ export async function processHubspotEvent(
     }
     
     // Initialize HubSpot client
-    const hubspot = await getHubspotClient(account);
+    // Use type assertion to tell TypeScript that the AxiosInstance has the HubSpot API structure
+    const hubspot = await getHubspotClient(userId) as unknown as HubspotClient;
     
     // Determine the event type
     const eventType = eventData.subscriptionType;
@@ -71,8 +164,8 @@ export async function processHubspotEvent(
  */
 async function processContactEvent(
   userId: string,
-  hubspot: any,
-  eventData: any
+  hubspot: HubspotClient,
+  eventData: HubspotEventData
 ): Promise<void> {
   try {
     const contactId = eventData.objectId;
@@ -106,7 +199,7 @@ async function processContactEvent(
     const existingContact = await prisma.hubspotContact.findFirst({
       where: {
         userId,
-        contactId: String(contactId),
+        hubspotId: String(contactId),
       },
     });
     
@@ -131,7 +224,7 @@ async function processContactEvent(
       const newContact = await prisma.hubspotContact.create({
         data: {
           userId,
-          contactId: String(contactId),
+          hubspotId: String(contactId),
           email,
           firstName,
           lastName,
@@ -157,8 +250,8 @@ async function processContactEvent(
  */
 async function processNoteEvent(
   userId: string,
-  hubspot: any,
-  eventData: any
+  hubspot: HubspotClient,
+  eventData: HubspotEventData
 ): Promise<void> {
   try {
     const noteId = eventData.objectId;
@@ -181,13 +274,13 @@ async function processNoteEvent(
     const contactId = associationsResponse.body.results[0].id;
     
     // Generate embedding for the note
-    const content = note.properties.hs_note_body;
+    const content = note.properties.hs_note_body || "";
     const embedding = await generateEmbedding(content);
     
     // Check if the note already exists in our database
     const existingNote = await prisma.hubspotNote.findUnique({
       where: {
-        noteId: String(noteId),
+        hubspotId: String(noteId),
       },
     });
     
@@ -208,10 +301,10 @@ async function processNoteEvent(
       // Create a new note
       const newNote = await prisma.hubspotNote.create({
         data: {
-          noteId: String(noteId),
+          hubspotId: String(noteId),
           contactId: String(contactId),
           content,
-          createdAt: new Date(note.properties.hs_createdate),
+          createdAt: new Date(note.properties.hs_createdate || Date.now()),
           embedding,
         },
       });
@@ -233,8 +326,8 @@ async function processNoteEvent(
  */
 async function processDealEvent(
   userId: string,
-  hubspot: any,
-  eventData: any
+  hubspot: HubspotClient,
+  eventData: HubspotEventData
 ): Promise<void> {
   try {
     const dealId = eventData.objectId;
@@ -261,23 +354,27 @@ async function processDealEvent(
  */
 async function processInstructions(
   userId: string,
-  eventData: any
+  eventData: HubspotEventData
 ): Promise<void> {
   // Get active instructions
   const instructions = await prisma.instruction.findMany({
     where: {
       userId,
       active: true,
-      type: "HUBSPOT",
+      // Filter instructions related to HubSpot in the application code
     },
   });
   
-  if (instructions.length === 0) {
+  // Filter instructions that contain 'hubspot' in their text (case-insensitive)
+  const hubspotInstructions = instructions.filter(instruction => 
+    instruction.instruction.toLowerCase().includes('hubspot'));
+  
+  if (hubspotInstructions.length === 0) {
     return;
   }
   
-  // Process each instruction
-  for (const instruction of instructions) {
+  // Process each HubSpot-related instruction
+  for (const instruction of hubspotInstructions) {
     try {
       // Use the agent to process the instruction
       const prompt = `
@@ -300,7 +397,7 @@ async function processInstructions(
             userId,
             title: `Process HubSpot event: ${eventData.subscriptionType}`,
             description: response,
-            type: "HUBSPOT_INSTRUCTION",
+            type: "HUBSPOT",
             status: "PENDING",
             metadata: {
               objectId: eventData.objectId,

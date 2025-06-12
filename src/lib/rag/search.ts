@@ -244,7 +244,7 @@ async function findSimilarEvents(queryEmbedding: number[], userId: string, start
 }
 
 // Generate embeddings for text
-async function generateEmbedding(text: string) {
+export async function generateEmbedding(text: string) {
   const response = await openai.embeddings.create({
     model: "text-embedding-ada-002",
     input: text,

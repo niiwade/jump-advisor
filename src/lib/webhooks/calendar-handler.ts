@@ -1,7 +1,27 @@
 import { prisma } from "@/lib/db/prisma";
 import { getCalendarClient } from "@/lib/api/calendar";
-import { generateEmbedding } from "@/lib/rag/search";
 import { processUserRequest } from "@/lib/agents/financial-advisor-agent";
+
+// Helper function to safely parse dates with fallback
+function safeParseDate(dateTime?: string, date?: string): Date {
+  if (dateTime) return new Date(dateTime);
+  if (date) return new Date(date);
+  return new Date(); // Fallback to current date if both are undefined
+}
+
+// Helper function to generate embeddings
+async function generateEmbedding(text: string) {
+  const openai = new (await import("openai")).OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+  
+  const response = await openai.embeddings.create({
+    model: "text-embedding-ada-002",
+    input: text,
+  });
+  
+  return response.data[0].embedding;
+}
 
 /**
  * Process a calendar update notification
@@ -31,7 +51,7 @@ export async function processCalendarUpdate(
     }
     
     // Initialize Calendar client
-    const calendar = await getCalendarClient(account);
+    const calendar = await getCalendarClient(userId);
     
     // If the resource is deleted, remove it from our database
     if (resourceState === "not_exists") {
@@ -51,10 +71,46 @@ export async function processCalendarUpdate(
     }
     
     // Process the event
-    await processCalendarEvent(userId, event.data);
+    if (event.data && event.data.id) {
+      await processCalendarEvent(userId, {
+        id: event.data.id,
+        summary: event.data.summary || '',
+        description: event.data.description || '',
+        location: event.data.location || '',
+        start: event.data.start ? {
+          dateTime: event.data.start.dateTime || undefined,
+          date: event.data.start.date || undefined
+        } : undefined,
+        end: event.data.end ? {
+          dateTime: event.data.end.dateTime || undefined,
+          date: event.data.end.date || undefined
+        } : undefined,
+        attendees: event.data.attendees?.map(attendee => ({ 
+          email: attendee.email || undefined 
+        })) || []
+      });
+    }
     
     // Check for any instructions that need to be processed
-    await processInstructions(userId, event.data);
+    if (event.data && event.data.id) {
+      await processInstructions(userId, {
+        id: event.data.id,
+        summary: event.data.summary || '',
+        description: event.data.description || '',
+        location: event.data.location || '',
+        start: event.data.start ? {
+          dateTime: event.data.start.dateTime || undefined,
+          date: event.data.start.date || undefined
+        } : undefined,
+        end: event.data.end ? {
+          dateTime: event.data.end.dateTime || undefined,
+          date: event.data.end.date || undefined
+        } : undefined,
+        attendees: event.data.attendees?.map(attendee => ({ 
+          email: attendee.email || undefined 
+        })) || []
+      });
+    }
     
   } catch (error) {
     console.error("Error processing calendar update:", error);
@@ -70,34 +126,48 @@ export async function processCalendarUpdate(
  */
 async function processCalendarEvent(
   userId: string,
-  eventData: any
+  eventData: {
+    id: string;
+    summary?: string;
+    description?: string;
+    location?: string;
+    start?: { dateTime?: string; date?: string };
+    end?: { dateTime?: string; date?: string };
+    attendees?: Array<{ email?: string }>;
+  }
 ): Promise<void> {
   try {
     // Extract event data
     const {
       id: eventId,
-      summary: title,
-      description = "",
-      location = "",
+      summary: title = "",
+      description: descriptionRaw = "",
+      location: locationRaw = "",
       start,
       end,
       attendees = [],
     } = eventData;
     
+    // Ensure these are always strings for TypeScript
+    const description: string = descriptionRaw;
+    const location: string = locationRaw;
+    
     // Convert attendees to our format
-    const attendeeEmails = attendees.map((a: any) => a.email);
+    const attendeeEmails = attendees?.map(a => a.email || '').filter(Boolean) || [];
     
     // Generate embedding for the event content
     const combinedText = `${title} ${description} ${location} ${attendeeEmails.join(" ")}`;
     const embedding = await generateEmbedding(combinedText);
     
+    // Parse dates safely
+    const startTime = safeParseDate(start?.dateTime, start?.date);
+    const endTime = safeParseDate(end?.dateTime, end?.date);
+    
     // Check if the event already exists in our database
-    const existingEvent = await prisma.calendarEvent.findUnique({
+    const existingEvent = await prisma.calendarEvent.findFirst({
       where: {
-        userId_eventId: {
-          userId,
-          eventId,
-        },
+        userId,
+        eventId,
       },
     });
     
@@ -109,10 +179,10 @@ async function processCalendarEvent(
         },
         data: {
           title,
-          description,
+          description: description || "",  // Ensure description is always a string
           location,
-          startTime: new Date(start.dateTime || start.date),
-          endTime: new Date(end.dateTime || end.date),
+          startTime,
+          endTime,
           attendees: attendeeEmails,
           embedding,
         },
@@ -126,10 +196,10 @@ async function processCalendarEvent(
           userId,
           eventId,
           title,
-          description,
+          description: description || "",  // Ensure description is always a string
           location,
-          startTime: new Date(start.dateTime || start.date),
-          endTime: new Date(end.dateTime || end.date),
+          startTime,
+          endTime,
           attendees: attendeeEmails,
           embedding,
         },
@@ -177,14 +247,24 @@ async function handleDeletedEvent(
  */
 async function processInstructions(
   userId: string,
-  eventData: any
+  eventData: {
+    id: string;
+    summary?: string;
+    description?: string;
+    location?: string;
+    start?: { dateTime?: string; date?: string };
+    end?: { dateTime?: string; date?: string };
+    attendees?: Array<{ email?: string }>;
+  }
 ): Promise<void> {
   // Get active instructions
   const instructions = await prisma.instruction.findMany({
     where: {
       userId,
       active: true,
-      type: "CALENDAR",
+      instruction: {
+        contains: "calendar",
+      },
     },
   });
   
@@ -195,13 +275,17 @@ async function processInstructions(
   // Extract event data
   const {
     id: eventId,
-    summary: title,
-    description = "",
-    location = "",
+    summary: title = "",
+    description: descriptionRaw = "",
+    location: locationRaw = "",
     start,
     end,
     attendees = [],
   } = eventData;
+  
+  // Ensure these are always strings for TypeScript
+  const description: string = descriptionRaw;
+  const location: string = locationRaw;
   
   // Process each instruction
   for (const instruction of instructions) {
@@ -212,9 +296,9 @@ async function processInstructions(
         Title: ${title}
         Description: ${description}
         Location: ${location}
-        Start: ${start.dateTime || start.date}
-        End: ${end.dateTime || end.date}
-        Attendees: ${attendees.map((a: any) => a.email).join(", ")}
+        Start: ${start?.dateTime || start?.date || 'Not specified'}
+        End: ${end?.dateTime || end?.date || 'Not specified'}
+        Attendees: ${attendees?.map(a => a.email || '').filter(Boolean).join(", ") || "None"}
         
         I have the following instruction: "${instruction.instruction}"
         
@@ -230,7 +314,7 @@ async function processInstructions(
             userId,
             title: `Process calendar event: ${title}`,
             description: response,
-            type: "CALENDAR_INSTRUCTION",
+            type: "EMAIL", // Using an existing TaskType value
             status: "PENDING",
             metadata: {
               eventId,

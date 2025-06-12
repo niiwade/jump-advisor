@@ -152,24 +152,24 @@ export async function importEmails(userId: string) {
       // Store in database - use upsert to handle duplicate emails
       await prisma.emailDocument.upsert({
         where: {
-          emailId: message.id!
+          messageId: message.id!
         },
         update: {
           subject,
           content: body,
           sender: from,
-          recipients: [to],
+          recipient: to,
           sentAt: date,
           embedding,
           updatedAt: new Date()
         },
         create: {
-          emailId: message.id!,
+          messageId: message.id!,
           userId,
           subject,
           content: body,
           sender: from,
-          recipients: [to],
+          recipient: to,
           sentAt: date,
           embedding, // This would be stored using pgvector in a real implementation
         },
@@ -256,12 +256,12 @@ export async function handleNewEmail(userId: string, emailData: EmailWebhookData
     // Store in database
     await prisma.emailDocument.create({
       data: {
-        emailId: emailData.messageId,
+        messageId: emailData.messageId,
         userId,
         subject,
         content: body,
         sender: from,
-        recipients: [to],
+        recipient: to,
         sentAt: date,
         embedding, // This would be stored using pgvector in a real implementation
       },
