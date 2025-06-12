@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     const parentTaskId = url.searchParams.get('parentTaskId');
     
     // Build the query
-    const where: { userId: string; status?: TaskStatus; parentTaskId?: string | null } = { userId };
+    const where: { userId: string; status?: TaskStatus } = { userId };
     
     // Filter by status if provided
     if (status) {
@@ -34,13 +34,8 @@ export async function GET(request: NextRequest) {
       where.status = status as TaskStatus;
     }
     
-    // Filter by parent task if provided
-    if (parentTaskId) {
-      where.parentTaskId = parentTaskId;
-    } else {
-      // By default, only show top-level tasks (no parentTaskId)
-      where.parentTaskId = null;
-    }
+    // Note: parentTaskId filtering will be done after fetching tasks
+    // since it's stored in metadata now, not as a direct field
     
     // Get all tasks for the user with optional steps
     const tasks = await prisma.task.findMany({
@@ -57,14 +52,12 @@ export async function GET(request: NextRequest) {
         status: true,
         type: true,
         metadata: true,
-        parentTaskId: true,
         createdAt: true,
         updatedAt: true,
         completedAt: true,
         // Exclude fields that don't exist in the database:
-        // - currentStep, totalSteps, waitingFor, waitingSince, resumeAfter
+        // - currentStep, totalSteps, waitingFor, waitingSince, resumeAfter, parentTaskId
         steps: includeSteps,
-        subTasks: !parentTaskId, // Include subtasks only for top-level tasks
       },
     });
     
@@ -72,17 +65,39 @@ export async function GET(request: NextRequest) {
     interface TaskMetadata {
       currentStep?: number;
       totalSteps?: number;
+      parentTaskId?: string | null;
+      waitingFor?: string | null;
+      waitingSince?: string | null;
+      resumeAfter?: string | null;
       [key: string]: unknown;
     }
     
-    // Add default currentStep and totalSteps values to each task
-    const tasksWithMissingFields = tasks.map(task => ({
+    // Add default values and filter by parentTaskId if needed
+    let tasksWithMissingFields = tasks.map(task => ({
       ...task,
       // Get currentStep from metadata or default to 1
       currentStep: (task.metadata as TaskMetadata)?.currentStep || 1,
       // Get totalSteps from steps length or from metadata or default to 1
       totalSteps: task.steps?.length || (task.metadata as TaskMetadata)?.totalSteps || 1,
+      // Get parentTaskId from metadata
+      parentTaskId: (task.metadata as TaskMetadata)?.parentTaskId || null,
+      // Get waiting fields from metadata
+      waitingFor: (task.metadata as TaskMetadata)?.waitingFor || null,
+      waitingSince: (task.metadata as TaskMetadata)?.waitingSince || null,
+      resumeAfter: (task.metadata as TaskMetadata)?.resumeAfter || null
     }));
+    
+    // Filter by parentTaskId if provided (now using the metadata-derived field)
+    if (parentTaskId) {
+      tasksWithMissingFields = tasksWithMissingFields.filter(task => 
+        task.parentTaskId === parentTaskId
+      );
+    } else {
+      // By default, only show top-level tasks (no parentTaskId)
+      tasksWithMissingFields = tasksWithMissingFields.filter(task => 
+        task.parentTaskId === null
+      );
+    }
     
     return NextResponse.json({ tasks: tasksWithMissingFields });
   } catch (error) {

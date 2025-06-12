@@ -127,12 +127,11 @@ export async function GET(req: NextRequest) {
         status: true,
         type: true,
         metadata: true,
-        parentTaskId: true,
         createdAt: true,
         updatedAt: true,
         completedAt: true,
         // Exclude fields that don't exist in the database:
-        // - currentStep, totalSteps, waitingFor, waitingSince, resumeAfter
+        // - currentStep, totalSteps, waitingFor, waitingSince, resumeAfter, parentTaskId
       },
     });
     
@@ -140,16 +139,26 @@ export async function GET(req: NextRequest) {
     interface TaskMetadata {
       currentStep?: number;
       totalSteps?: number;
+      parentTaskId?: string | null;
+      waitingFor?: string | null;
+      waitingSince?: string | null;
+      resumeAfter?: string | null;
       [key: string]: unknown;
     }
     
-    // Add default currentStep and totalSteps values to each task
+    // Add default values from metadata to each task
     const tasksWithMissingFields = tasks.map(task => ({
       ...task,
       // Get currentStep from metadata or default to 1
       currentStep: (task.metadata as TaskMetadata)?.currentStep || 1,
       // Get totalSteps from metadata or default to 1
       totalSteps: (task.metadata as TaskMetadata)?.totalSteps || 1,
+      // Get parentTaskId from metadata
+      parentTaskId: (task.metadata as TaskMetadata)?.parentTaskId || null,
+      // Get waiting fields from metadata
+      waitingFor: (task.metadata as TaskMetadata)?.waitingFor || null,
+      waitingSince: (task.metadata as TaskMetadata)?.waitingSince || null,
+      resumeAfter: (task.metadata as TaskMetadata)?.resumeAfter || null
     }));
     
     return NextResponse.json({ tasks: tasksWithMissingFields });
