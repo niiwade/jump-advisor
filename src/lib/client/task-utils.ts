@@ -45,7 +45,7 @@ export async function setTaskWaiting(
  */
 export async function resumeTask(
   taskId: string, 
-  response?: any, 
+  response?: Record<string, unknown> | string, 
   stepId?: string
 ) {
   try {
@@ -113,7 +113,7 @@ export async function completeTask(
  */
 export async function failTask(
   taskId: string, 
-  response?: any, 
+  response?: Record<string, unknown> | string, 
   stepId?: string
 ) {
   try {
@@ -229,7 +229,7 @@ export async function createMultiStepTask(taskData: {
     status?: TaskStatus;
   }>;
   parentTaskId?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }) {
   try {
     const response = await fetch('/api/tasks', {
@@ -290,14 +290,33 @@ export function formatWaitingDuration(waitingSince: string | Date | null): strin
 /**
  * Check if a task is waiting for a response
  */
-export function isTaskWaiting(task: any): boolean {
+interface BaseTask {
+  id?: string;
+  status?: string;
+  resumeAfter?: string | Date;
+  steps?: TaskStep[];
+  currentStep?: number;
+  totalSteps?: number;
+  metadata?: Record<string, unknown>;
+}
+
+interface TaskStep {
+  id: string;
+  stepNumber: number;
+  status?: string;
+  title?: string;
+  description?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export function isTaskWaiting(task: BaseTask): boolean {
   return task?.status === TaskStatus.WAITING_FOR_RESPONSE;
 }
 
 /**
  * Check if a task has expired its waiting time
  */
-export function hasTaskWaitingExpired(task: any): boolean {
+export function hasTaskWaitingExpired(task: BaseTask): boolean {
   if (!isTaskWaiting(task) || !task.resumeAfter) return false;
   
   const resumeAfter = new Date(task.resumeAfter);
@@ -309,19 +328,19 @@ export function hasTaskWaitingExpired(task: any): boolean {
 /**
  * Get the current step of a multi-step task
  */
-export function getCurrentStep(task: any): any {
+export function getCurrentStep(task: BaseTask): TaskStep | null {
   if (!task?.steps || task.steps.length === 0) return null;
   
-  return task.steps.find((step: any) => step.stepNumber === task.currentStep) || null;
+  return task.steps.find((step: TaskStep) => step.stepNumber === task.currentStep) || null;
 }
 
 /**
  * Calculate the progress percentage of a multi-step task
  */
-export function calculateTaskProgress(task: any): number {
+export function calculateTaskProgress(task: BaseTask): number {
   if (!task?.totalSteps || task.totalSteps === 0) return 0;
   
-  const completedSteps = task.steps?.filter((step: any) => 
+  const completedSteps = task.steps?.filter((step: TaskStep) => 
     step.status === TaskStatus.COMPLETED
   ).length || 0;
   

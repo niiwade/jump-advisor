@@ -4,6 +4,7 @@ import { handleNewEmail } from "@/lib/api/gmail";
 import { handleNewCalendarEvent } from "@/lib/api/calendar";
 import { handleNewHubspotContact } from "@/lib/api/hubspot";
 import { processUserRequest } from "@/lib/agents/financial-advisor-agent";
+import { Message } from "ai";
 
 // Main webhook handler
 export async function POST(req: NextRequest) {
@@ -58,8 +59,35 @@ export async function POST(req: NextRequest) {
   }
 }
 
+// Define webhook data types
+interface EmailWebhookData {
+  messageId: string;
+  sender?: string;
+  subject?: string;
+  content?: string;
+}
+
+interface CalendarWebhookData {
+  eventId: string;
+  title?: string;
+  startTime?: string | Date;
+  endTime?: string | Date;
+  attendees?: string[];
+  description?: string;
+}
+
+interface HubspotWebhookData {
+  objectId: string;
+  properties?: {
+    email?: string;
+    firstname?: string;
+    lastname?: string;
+    [key: string]: unknown;
+  };
+}
+
 // Gmail webhook handler
-async function handleGmailWebhook(userId: string, data: any) {
+async function handleGmailWebhook(userId: string, data: EmailWebhookData) {
   // Process new email
   const result = await handleNewEmail(userId, data);
 
@@ -95,7 +123,8 @@ async function handleGmailWebhook(userId: string, data: any) {
     const formattedHistory = chatHistory.map((message) => ({
       role: message.role,
       content: message.content,
-    }));
+      id: message.id || `msg-${Math.random().toString(36).substring(2, 11)}`,
+    })) as Message[];
 
     // Process with agent
     const agentResponse = await processUserRequest(
@@ -118,7 +147,7 @@ async function handleGmailWebhook(userId: string, data: any) {
 }
 
 // Calendar webhook handler
-async function handleCalendarWebhook(userId: string, data: any) {
+async function handleCalendarWebhook(userId: string, data: CalendarWebhookData) {
   // Process new calendar event
   const result = await handleNewCalendarEvent(userId, data);
 
@@ -156,13 +185,17 @@ async function handleCalendarWebhook(userId: string, data: any) {
     const formattedHistory = chatHistory.map((message) => ({
       role: message.role,
       content: message.content,
-    }));
+      id: message.id || `msg-${Math.random().toString(36).substring(2, 11)}`,
+    })) as Message[];
 
     // Process with agent
     const agentResponse = await processUserRequest(
       userId,
       systemMessage,
-      formattedHistory
+      formattedHistory.map(msg => ({
+        ...msg,
+        id: `msg-${Math.random().toString(36).substring(2, 11)}` // Add required id field
+      })) as Message[]
     );
 
     // Save agent response as a system message
@@ -179,7 +212,7 @@ async function handleCalendarWebhook(userId: string, data: any) {
 }
 
 // HubSpot webhook handler
-async function handleHubspotWebhook(userId: string, data: any) {
+async function handleHubspotWebhook(userId: string, data: HubspotWebhookData) {
   // Process new HubSpot contact
   const result = await handleNewHubspotContact(userId, data);
 
@@ -215,7 +248,8 @@ async function handleHubspotWebhook(userId: string, data: any) {
     const formattedHistory = chatHistory.map((message) => ({
       role: message.role,
       content: message.content,
-    }));
+      id: message.id || `msg-${Math.random().toString(36).substring(2, 11)}`,
+    })) as Message[];
 
     // Process with agent
     const agentResponse = await processUserRequest(

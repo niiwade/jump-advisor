@@ -1,5 +1,26 @@
 import { prisma } from "@/lib/db/prisma";
-import { TaskStatus } from "@prisma/client";
+import { TaskStatus, Task } from "@prisma/client";
+import { JsonValue } from "@prisma/client/runtime/library";
+
+type JsonObject = { [Key in string]?: JsonValue };
+
+// Define interfaces for task and step with metadata
+interface TaskWithSteps extends Omit<Task, 'metadata' | 'currentStep'> {
+  steps?: TaskStepWithMetadata[];
+  metadata?: JsonValue;
+  title: string;
+  currentStep: number;
+}
+
+interface TaskStepWithMetadata {
+  id: string;
+  stepNumber: number;
+  status?: string;
+  metadata?: JsonValue;
+  waitingFor?: string | null;
+  waitingSince?: Date | null;
+  resumeAfter?: Date | null;
+}
 
 // Interval in milliseconds for checking waiting tasks (default: 1 minute)
 const CHECK_INTERVAL = 60 * 1000;
@@ -103,18 +124,25 @@ export class TaskManager {
   /**
    * Resume a task that was in a waiting state
    */
-  static async resumeTask(task: any) {
+  static async resumeTask(task: TaskWithSteps) {
     try {
       console.log(`Resuming task ${task.id}: ${task.title}`);
       
       // Update the task metadata with auto-resume information
-      const updatedMetadata = {
-        ...(task.metadata || {}),
-        autoResumed: true,
-        autoResumeTime: new Date().toISOString(),
-        waitedFor: task.waitingFor,
-        waitingSince: task.waitingSince?.toISOString(),
-      };
+      const updatedMetadata: JsonValue = typeof task.metadata === 'object' && task.metadata !== null
+        ? {
+            ...task.metadata as Record<string, unknown>,
+            autoResumed: true,
+            autoResumeTime: new Date().toISOString(),
+            waitedFor: task.waitingFor,
+            waitingSince: task.waitingSince?.toISOString(),
+          }
+        : {
+            autoResumed: true,
+            autoResumeTime: new Date().toISOString(),
+            waitedFor: task.waitingFor,
+            waitingSince: task.waitingSince?.toISOString(),
+          };
       
       // Update the task
       await prisma.task.update({
@@ -132,16 +160,23 @@ export class TaskManager {
       
       // If the task has steps, update the current step as well
       if (task.steps && task.steps.length > 0) {
-        const currentStep = task.steps.find((step: any) => step.stepNumber === task.currentStep);
+        const currentStep = task.steps.find((step: TaskStepWithMetadata) => step.stepNumber === task.currentStep);
         
         if (currentStep) {
-          const stepMetadata = {
-            ...(currentStep.metadata || {}),
-            autoResumed: true,
-            autoResumeTime: new Date().toISOString(),
-            waitedFor: currentStep.waitingFor,
-            waitingSince: currentStep.waitingSince?.toISOString(),
-          };
+          const stepMetadata: JsonValue = typeof currentStep.metadata === 'object' && currentStep.metadata !== null
+            ? {
+                ...currentStep.metadata as Record<string, unknown>,
+                autoResumed: true,
+                autoResumeTime: new Date().toISOString(),
+                waitedFor: currentStep.waitingFor,
+                waitingSince: currentStep.waitingSince?.toISOString(),
+              }
+            : {
+                autoResumed: true,
+                autoResumeTime: new Date().toISOString(),
+                waitedFor: currentStep.waitingFor,
+                waitingSince: currentStep.waitingSince?.toISOString(),
+              };
           
           await prisma.taskStep.update({
             where: {
@@ -169,7 +204,7 @@ export class TaskManager {
   /**
    * Manually resume a specific task
    */
-  static async manuallyResumeTask(taskId: string, response?: any) {
+  static async manuallyResumeTask(taskId: string, response?: string) {
     try {
       // Find the task
       const task = await prisma.task.findUnique({
@@ -187,18 +222,30 @@ export class TaskManager {
       }
       
       // Update the task metadata with manual resume information
-      const updatedMetadata = {
-        ...(task.metadata || {}),
-        manuallyResumed: true,
-        resumeTime: new Date().toISOString(),
-        waitedFor: task.waitingFor,
-        waitingSince: task.waitingSince?.toISOString(),
-      };
+      const updatedMetadata: JsonValue = typeof task.metadata === 'object' && task.metadata !== null
+        ? {
+            ...task.metadata as Record<string, unknown>,
+            manuallyResumed: true,
+            manualResumeTime: new Date().toISOString(),
+            userResponse: response || null,
+            waitedFor: task.waitingFor,
+            waitingSince: task.waitingSince?.toISOString(),
+          }
+        : {
+            manuallyResumed: true,
+            manualResumeTime: new Date().toISOString(),
+            userResponse: response || null,
+            waitedFor: task.waitingFor,
+            waitingSince: task.waitingSince?.toISOString(),
+          };
       
       // Add response if provided
-      if (response !== undefined) {
-        updatedMetadata.responses = [
-          ...(updatedMetadata.responses || []),
+      if (response !== undefined && typeof updatedMetadata === 'object' && updatedMetadata !== null) {
+        const metadataObj = updatedMetadata as JsonObject;
+        const existingResponses = Array.isArray(metadataObj.responses) ? metadataObj.responses : [];
+        
+        metadataObj.responses = [
+          ...existingResponses,
           {
             timestamp: new Date().toISOString(),
             response,
@@ -223,21 +270,33 @@ export class TaskManager {
       
       // If the task has steps, update the current step as well
       if (task.steps && task.steps.length > 0) {
-        const currentStep = task.steps.find((step: any) => step.stepNumber === task.currentStep);
+        const currentStep = task.steps.find((step: TaskStepWithMetadata) => step.stepNumber === task.currentStep);
         
         if (currentStep) {
-          const stepMetadata = {
-            ...(currentStep.metadata || {}),
-            manuallyResumed: true,
-            resumeTime: new Date().toISOString(),
-            waitedFor: currentStep.waitingFor,
-            waitingSince: currentStep.waitingSince?.toISOString(),
-          };
+          const stepMetadata: JsonValue = typeof currentStep.metadata === 'object' && currentStep.metadata !== null
+            ? {
+                ...currentStep.metadata as Record<string, unknown>,
+                manuallyResumed: true,
+                manualResumeTime: new Date().toISOString(),
+                userResponse: response || null,
+                waitedFor: currentStep.waitingFor,
+                waitingSince: currentStep.waitingSince?.toISOString(),
+              }
+            : {
+                manuallyResumed: true,
+                manualResumeTime: new Date().toISOString(),
+                userResponse: response || null,
+                waitedFor: currentStep.waitingFor,
+                waitingSince: currentStep.waitingSince?.toISOString(),
+              };
           
           // Add response if provided
-          if (response !== undefined) {
-            stepMetadata.responses = [
-              ...(stepMetadata.responses || []),
+          if (response !== undefined && typeof stepMetadata === 'object' && stepMetadata !== null) {
+            const metadataObj = stepMetadata as JsonObject;
+            const existingResponses = Array.isArray(metadataObj.responses) ? metadataObj.responses : [];
+            
+            metadataObj.responses = [
+              ...existingResponses,
               {
                 timestamp: new Date().toISOString(),
                 response,

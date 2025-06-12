@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/auth-options";
 import { prisma } from "@/lib/db/prisma";
-import { TaskStatus } from "@prisma/client";
+import { TaskStatus, Prisma } from "@prisma/client";
 
 // GET a specific step by ID
 export async function GET(
@@ -110,8 +110,8 @@ export async function PATCH(
       completedAt
     } = updateData;
     
-    // Prepare update data
-    const stepUpdateData: any = {};
+    // Prepare update data using Prisma's TaskStepUpdateInput type
+    const stepUpdateData: Prisma.TaskStepUpdateInput = {};
     
     if (title !== undefined) stepUpdateData.title = title;
     if (description !== undefined) stepUpdateData.description = description;

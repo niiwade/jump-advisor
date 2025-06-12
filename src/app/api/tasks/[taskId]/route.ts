@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/auth-options";
 import { prisma } from "@/lib/db/prisma";
-import { TaskStatus } from "@prisma/client";
+import { TaskStatus, Prisma } from "@prisma/client";
 
 // GET a specific task by ID
 export async function GET(
@@ -100,8 +100,8 @@ export async function PATCH(
       );
     }
     
-    // Prepare update data
-    const taskUpdateData: any = {};
+    // Prepare update data using Prisma's TaskUpdateInput type
+    const taskUpdateData: Prisma.TaskUpdateInput = {};
     
     if (title !== undefined) taskUpdateData.title = title;
     if (description !== undefined) taskUpdateData.description = description;
@@ -123,9 +123,10 @@ export async function PATCH(
       taskUpdateData.completedAt = completedAt ? new Date(completedAt) : null;
     }
     
-    // If status is changing to COMPLETED, set completedAt if not provided
-    if (status === TaskStatus.COMPLETED && completedAt === undefined) {
-      taskUpdateData.completedAt = new Date();
+    // If status is changing to COMPLETED or FAILED, set completedAt if not provided
+    if (status === TaskStatus.COMPLETED || status === TaskStatus.FAILED) {
+      // Use type assertion with a more specific type
+      (taskUpdateData as Prisma.TaskUpdateInput & { completedAt: Date }).completedAt = new Date();
     }
     
     // If status is changing to WAITING_FOR_RESPONSE, set waitingSince if not provided

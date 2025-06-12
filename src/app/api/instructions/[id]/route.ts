@@ -6,8 +6,9 @@ import { prisma } from "@/lib/db/prisma";
 // PATCH update an instruction
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
+  const { params } = context;
   try {
     // Check authentication
     const session = await getServerSession(authOptions);
@@ -75,8 +76,9 @@ export async function PATCH(
 // DELETE an instruction
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
+  const { params } = context;
   try {
     // Check authentication
     const session = await getServerSession(authOptions);

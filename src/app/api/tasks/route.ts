@@ -26,11 +26,12 @@ export async function GET(request: NextRequest) {
     const parentTaskId = url.searchParams.get('parentTaskId');
     
     // Build the query
-    const where: any = { userId };
+    const where: { userId: string; status?: TaskStatus; parentTaskId?: string | null } = { userId };
     
     // Filter by status if provided
     if (status) {
-      where.status = status;
+      // Convert string status to TaskStatus enum
+      where.status = status as TaskStatus;
     }
     
     // Filter by parent task if provided
@@ -123,7 +124,7 @@ export async function POST(req: NextRequest) {
         parentTaskId,
         // Create steps if provided
         steps: steps.length > 0 ? {
-          create: steps.map((step: any, index: number) => ({
+          create: steps.map((step: { title: string; description?: string; metadata?: Record<string, unknown> }, index: number) => ({
             stepNumber: index + 1,
             title: step.title,
             description: step.description || "",

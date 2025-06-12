@@ -26,7 +26,12 @@ export async function GET(request: NextRequest) {
     const includeExpired = url.searchParams.get('includeExpired') === 'true';
     
     // Build the query
-    const where: any = { 
+    const where: { 
+      userId: string;
+      status: TaskStatus;
+      waitingFor?: string;
+      resumeAfter?: { lt?: Date; lte?: Date };
+    } = { 
       userId,
       status: TaskStatus.WAITING_FOR_RESPONSE,
     };
@@ -112,12 +117,16 @@ export async function POST(request: NextRequest) {
     }
     
     // Update the task metadata with the response if provided
-    let updatedMetadata = task.metadata as Record<string, any> || {};
+    // Define a type that matches Prisma's JSON structure
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    type PrismaJson = { [key: string]: any };
+    let updatedMetadata = (task.metadata || {}) as PrismaJson;
     if (response !== undefined) {
       updatedMetadata = {
         ...updatedMetadata,
         responses: [
-          ...(updatedMetadata.responses || []),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ...((updatedMetadata.responses as any[]) || []),
           {
             timestamp: new Date().toISOString(),
             response,
@@ -137,7 +146,8 @@ export async function POST(request: NextRequest) {
         waitingFor: null,
         waitingSince: null,
         resumeAfter: null,
-        metadata: updatedMetadata,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        metadata: updatedMetadata as any,
       },
       include: {
         steps: true,
@@ -159,9 +169,10 @@ export async function POST(request: NextRequest) {
             waitingSince: null,
             resumeAfter: null,
             metadata: {
-              ...(currentStep.metadata as Record<string, any> || {}),
+              ...((currentStep.metadata || {}) as PrismaJson),
               responses: [
-                ...((currentStep.metadata as Record<string, any>)?.responses || []),
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                ...((currentStep.metadata as any)?.responses || []),
                 response !== undefined ? {
                   timestamp: new Date().toISOString(),
                   response,

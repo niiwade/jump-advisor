@@ -31,7 +31,7 @@ export async function processNewEmail(
     }
     
     // Initialize Gmail client
-    const gmail = await getGmailClient(account);
+    const gmail = await getGmailClient(userId);
     
     // Get history since last sync
     const lastSyncHistoryId = await getLastSyncHistoryId(userId);
@@ -87,9 +87,11 @@ export async function processNewEmail(
  * @param gmail The Gmail client
  * @param messageId The message ID
  */
+import { gmail_v1 } from 'googleapis';
+
 async function processMessage(
   userId: string,
-  gmail: any,
+  gmail: gmail_v1.Gmail,
   messageId: string
 ): Promise<void> {
   try {
@@ -101,23 +103,25 @@ async function processMessage(
     });
     
     // Extract email data
-    const headers = message.data.payload.headers;
-    const subject = headers.find((h: any) => h.name === "Subject")?.value || "";
-    const from = headers.find((h: any) => h.name === "From")?.value || "";
-    const to = headers.find((h: any) => h.name === "To")?.value || "";
-    const date = headers.find((h: any) => h.name === "Date")?.value || "";
+    const headers = message.data.payload?.headers || [];
+    
+    // Use the correct Schema type from Gmail API
+    const subject = headers.find((h) => h.name === "Subject")?.value || "";
+    const from = headers.find((h) => h.name === "From")?.value || "";
+    const to = headers.find((h) => h.name === "To")?.value || "";
+    const date = headers.find((h) => h.name === "Date")?.value || "";
     
     // Extract email body
     let content = "";
     
-    if (message.data.payload.parts) {
+    if (message.data.payload?.parts) {
       // Multipart message
       for (const part of message.data.payload.parts) {
-        if (part.mimeType === "text/plain" && part.body.data) {
+        if (part.mimeType === "text/plain" && part.body?.data) {
           content += Buffer.from(part.body.data, "base64").toString("utf-8");
         }
       }
-    } else if (message.data.payload.body.data) {
+    } else if (message.data.payload?.body?.data) {
       // Simple message
       content = Buffer.from(message.data.payload.body.data, "base64").toString("utf-8");
     }
@@ -205,7 +209,7 @@ async function processInstructions(userId: string): Promise<void> {
     where: {
       userId,
       active: true,
-      type: "EMAIL",
+      // Remove the type field if it's not part of InstructionWhereInput
     },
   });
   
@@ -250,7 +254,7 @@ async function processInstructions(userId: string): Promise<void> {
               userId,
               title: `Process email: ${email.subject}`,
               description: response,
-              type: "EMAIL_INSTRUCTION",
+              type: "EMAIL", // Using a valid TaskType enum value
               status: "PENDING",
               metadata: {
                 emailId: email.id,

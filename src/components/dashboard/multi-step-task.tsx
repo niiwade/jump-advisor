@@ -7,15 +7,15 @@ import {
   CardHeader, 
   CardTitle 
 } from "@/components/ui/card";
-import { 
-  Button, 
-  Badge, 
-  Progress, 
-  Accordion, 
-  AccordionItem, 
-  AccordionTrigger, 
-  AccordionContent 
-} from "@/components/ui";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import {
+  Accordion,
+  AccordionItem,
+  AccordionTrigger,
+  AccordionContent
+} from "@/components/ui/accordion";
 import { TaskStatus } from "@prisma/client";
 import { 
   CheckCircle, 
@@ -49,7 +49,7 @@ interface TaskStep {
   waitingSince?: string;
   resumeAfter?: string;
   completedAt?: string;
-  metadata?: any;
+  metadata?: Record<string, unknown>;
 }
 
 interface Task {
@@ -67,7 +67,7 @@ interface Task {
   completedAt?: string;
   createdAt: string;
   updatedAt: string;
-  metadata?: any;
+  metadata?: Record<string, unknown>;
 }
 
 interface MultiStepTaskProps {
@@ -100,7 +100,7 @@ export function MultiStepTask({ task, onTaskUpdated, onTaskCompleted }: MultiSte
   
   const progress = calculateTaskProgress(task);
   const currentStep = getCurrentStep(task);
-  const isTaskCompleted = task.status === TaskStatus.COMPLETED;
+  // Task status flags
   const isTaskWaiting = task.status === TaskStatus.WAITING_FOR_RESPONSE;
   
   // Handle advancing to the next step

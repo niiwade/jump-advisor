@@ -16,12 +16,12 @@ type ToasterToast = ToastProps & {
   action?: ToastActionElement
 }
 
-const actionTypes = {
-  ADD_TOAST: "ADD_TOAST",
-  UPDATE_TOAST: "UPDATE_TOAST",
-  DISMISS_TOAST: "DISMISS_TOAST",
-  REMOVE_TOAST: "REMOVE_TOAST",
-} as const
+// Define action types as string literals to avoid unused variable warnings
+type ToastActionType = 
+  | "ADD_TOAST"
+  | "UPDATE_TOAST"
+  | "DISMISS_TOAST"
+  | "REMOVE_TOAST"
 
 let count = 0
 
@@ -30,23 +30,23 @@ function genId() {
   return count.toString()
 }
 
-type ActionType = typeof actionTypes
+// Type is now defined directly
 
 type Action =
   | {
-      type: ActionType["ADD_TOAST"]
+      type: Extract<ToastActionType, "ADD_TOAST">
       toast: ToasterToast
     }
   | {
-      type: ActionType["UPDATE_TOAST"]
+      type: Extract<ToastActionType, "UPDATE_TOAST">
       toast: Partial<ToasterToast>
     }
   | {
-      type: ActionType["DISMISS_TOAST"]
+      type: Extract<ToastActionType, "DISMISS_TOAST">
       toastId?: ToasterToast["id"]
     }
   | {
-      type: ActionType["REMOVE_TOAST"]
+      type: Extract<ToastActionType, "REMOVE_TOAST">
       toastId?: ToasterToast["id"]
     }
 

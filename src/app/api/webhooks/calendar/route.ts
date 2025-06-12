@@ -15,8 +15,8 @@ export async function POST(req: Request) {
     // Parse the request body
     const body = await req.json();
     
-    // Get headers for verification
-    const headers = Object.fromEntries(req.headers);
+    // Headers can be used for verification if needed
+    // const headers = Object.fromEntries(req.headers);
     
     // Extract data from the notification
     const { 
@@ -31,9 +31,9 @@ export async function POST(req: Request) {
     }
     
     // Find the user associated with this channel
-    const subscription = await prisma.webhookSubscription.findUnique({
+    const subscription = await prisma.webhookSubscription.findFirst({
       where: {
-        channelId,
+        channelId: channelId,
         service: "CALENDAR"
       },
       include: {
@@ -41,7 +41,7 @@ export async function POST(req: Request) {
       },
     });
     
-    if (!subscription?.user) {
+    if (!subscription || !subscription.user) {
       console.error(`No user found for channel: ${channelId}`);
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
