@@ -79,7 +79,7 @@ export function AgentStatus({ userId }: AgentStatusProps) {
           Proactive Agent
           {status === 'idle' && <Badge variant="outline">Active</Badge>}
           {status === 'checking' && <Badge variant="secondary">Checking</Badge>}
-          {status === 'success' && <Badge variant="success">Updated</Badge>}
+          {status === 'success' && <Badge variant="default">Updated</Badge>}
           {status === 'error' && <Badge variant="destructive">Error</Badge>}
         </CardTitle>
         <CardDescription>

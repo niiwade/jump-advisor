@@ -22,6 +22,33 @@ type HubspotProfile = {
   name?: string;
 };
 
+type TokenResponse = {
+  access_token: string;
+  refresh_token: string;
+  expires_in: number;
+  token_type: string;
+};
+
+type ProviderConfig = {
+  token?: {
+    url?: string;
+  };
+};
+
+type TokenRequestParams = {
+  code: string;
+  [key: string]: string;
+};
+
+type TokenRequestContext = {
+  params: TokenRequestParams;
+  provider: ProviderConfig;
+};
+
+type UserInfoRequestContext = {
+  tokens: TokenResponse;
+};
+
 // HubSpot OAuth provider implementation
 export default function HubspotProvider(options: HubspotProviderOptions) {
   return {
@@ -40,75 +67,34 @@ export default function HubspotProvider(options: HubspotProviderOptions) {
     },
     token: {
       url: "https://api.hubapi.com/oauth/v1/token",
-      async request(context: { params: { code: string } }) {
-        // HubSpot requires client_id and client_secret in the POST body
-        const params = new URLSearchParams({
-          code: context.params.code,
-          grant_type: "authorization_code",
-          client_id: options.clientId,
-          client_secret: options.clientSecret,
-          redirect_uri: options.callbackUrl,
-        });
-        
-        const response = await fetch("https://api.hubapi.com/oauth/v1/token", {
+      async request({ params, provider }: TokenRequestContext) {
+        const response = await fetch((provider as ProviderConfig).token?.url as string, {
           method: "POST",
           headers: {
-            "Content-Type": "application/x-www-form-urlencoded"
+            "Content-Type": "application/x-www-form-urlencoded",
           },
-          body: params.toString(),
+          body: new URLSearchParams({
+            grant_type: "authorization_code",
+            client_id: options.clientId,
+            client_secret: options.clientSecret,
+            redirect_uri: options.callbackUrl,
+            code: params.code as string,
+          }),
         });
-        
-        const tokens = await response.json();
+
+        const tokens = await response.json() as TokenResponse;
         return { tokens };
       },
     },
     userinfo: {
       url: "https://api.hubapi.com/oauth/v1/access-tokens/",
-      async request({ tokens }: { tokens: { access_token: string } }) {
-        // First get the token info
-        const tokenResponse = await fetch(`https://api.hubapi.com/oauth/v1/access-tokens/${tokens.access_token}`, {
+      async request({ tokens }: UserInfoRequestContext) {
+        const response = await fetch(`${this.url}/${tokens.access_token}`, {
           headers: {
             Authorization: `Bearer ${tokens.access_token}`,
           },
         });
-        
-        if (!tokenResponse.ok) {
-          throw new Error(`Failed to get token info: ${tokenResponse.status} ${tokenResponse.statusText}`);
-        }
-        
-        const tokenInfo = await tokenResponse.json();
-        console.log('HubSpot token info:', JSON.stringify(tokenInfo, null, 2));
-        
-        // Then get the user info using the HubSpot API
-        try {
-          // Try to get user info from HubSpot API
-          const userResponse = await fetch('https://api.hubapi.com/integrations/v1/me', {
-            headers: {
-              Authorization: `Bearer ${tokens.access_token}`,
-            },
-          });
-          
-          if (userResponse.ok) {
-            const userData = await userResponse.json();
-            console.log('HubSpot user data:', JSON.stringify(userData, null, 2));
-            
-            // Combine data from both endpoints
-            return {
-              ...tokenInfo,
-              ...userData,
-              email: userData.email || tokenInfo.user,  // Ensure we have an email
-              user_id: tokenInfo.user_id || userData.user_id || tokenInfo.hub_id,
-            };
-          }
-        } catch (error) {
-          console.error('Error fetching HubSpot user data:', error);
-        }
-        
-        // Fallback to just the token info if user info fails
-        return {
-          ...tokenInfo,
-          email: tokenInfo.user,  // Use the user field as email
-        };
+        return response.json() as Promise<HubspotProfile>;
       },
     },
     profile(profile: HubspotProfile) {
@@ -127,6 +113,5 @@ export default function HubspotProvider(options: HubspotProviderOptions) {
         image: null,
       };
     },
-    options,
   };
 }
