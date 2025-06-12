@@ -283,8 +283,11 @@ export async function POST(request: NextRequest) {
         const nextStep = task.steps?.find(s => s.stepNumber === nextStepNumber);
         
         if (nextStep) {
-          // Update the task's current step
-          (updateData as Prisma.TaskUpdateInput & { currentStep: number }).currentStep = nextStepNumber;
+          // Store the current step in metadata instead of using the currentStep field
+          // since currentStep doesn't exist in the database
+          const updatedMetadataWithStep = updateData.metadata as Prisma.JsonObject || {};
+          updatedMetadataWithStep.currentStep = nextStepNumber;
+          updateData.metadata = updatedMetadataWithStep;
         }
       }
     }

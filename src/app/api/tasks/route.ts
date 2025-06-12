@@ -48,13 +48,43 @@ export async function GET(request: NextRequest) {
       orderBy: {
         updatedAt: "desc",
       },
-      include: {
+      // Select only the fields that exist in the database
+      select: {
+        id: true,
+        userId: true,
+        title: true,
+        description: true,
+        status: true,
+        type: true,
+        metadata: true,
+        parentTaskId: true,
+        createdAt: true,
+        updatedAt: true,
+        completedAt: true,
+        // Exclude fields that don't exist in the database:
+        // - currentStep, totalSteps, waitingFor, waitingSince, resumeAfter
         steps: includeSteps,
         subTasks: !parentTaskId, // Include subtasks only for top-level tasks
       },
     });
     
-    return NextResponse.json({ tasks });
+    // Define a type for task metadata that includes our custom fields
+    interface TaskMetadata {
+      currentStep?: number;
+      totalSteps?: number;
+      [key: string]: unknown;
+    }
+    
+    // Add default currentStep and totalSteps values to each task
+    const tasksWithMissingFields = tasks.map(task => ({
+      ...task,
+      // Get currentStep from metadata or default to 1
+      currentStep: (task.metadata as TaskMetadata)?.currentStep || 1,
+      // Get totalSteps from steps length or from metadata or default to 1
+      totalSteps: task.steps?.length || (task.metadata as TaskMetadata)?.totalSteps || 1,
+    }));
+    
+    return NextResponse.json({ tasks: tasksWithMissingFields });
   } catch (error) {
     console.error("Error fetching tasks:", error);
     return NextResponse.json(
@@ -98,7 +128,7 @@ export async function POST(req: NextRequest) {
       );
     }
     
-    // Calculate total steps
+    // Calculate total steps (will be stored in metadata)
     const totalSteps = steps.length || 1;
     
     // Determine initial status
@@ -106,6 +136,16 @@ export async function POST(req: NextRequest) {
     if (waitingFor) {
       initialStatus = TaskStatus.WAITING_FOR_RESPONSE;
     }
+    
+    // Prepare metadata with all the fields that don't exist in the database
+    const enhancedMetadata = {
+      ...(metadata || {}),
+      currentStep: 1,
+      totalSteps,
+      waitingFor,
+      waitingSince: waitingSince ? new Date(waitingSince) : waitingFor ? new Date() : null,
+      resumeAfter: resumeAfter ? new Date(resumeAfter) : null
+    };
     
     // Create new task
     const newTask = await prisma.task.create({
@@ -115,25 +155,30 @@ export async function POST(req: NextRequest) {
         description: description || "",
         type,
         status: initialStatus,
-        metadata: metadata || {},
-        totalSteps,
-        currentStep: 1,
-        waitingFor,
-        waitingSince: waitingSince ? new Date(waitingSince) : waitingFor ? new Date() : null,
-        resumeAfter: resumeAfter ? new Date(resumeAfter) : null,
+        metadata: enhancedMetadata,
         parentTaskId,
         // Create steps if provided
         steps: steps.length > 0 ? {
-          create: steps.map((step: { title: string; description?: string; metadata?: Record<string, unknown> }, index: number) => ({
-            stepNumber: index + 1,
-            title: step.title,
-            description: step.description || "",
-            status: index === 0 ? initialStatus : TaskStatus.PENDING,
-            metadata: step.metadata || {},
-            waitingFor: index === 0 ? waitingFor : null,
-            waitingSince: index === 0 && waitingFor ? (waitingSince ? new Date(waitingSince) : new Date()) : null,
-            resumeAfter: index === 0 && resumeAfter ? new Date(resumeAfter) : null
-          }))
+          create: steps.map((step: { title: string; description?: string; metadata?: Record<string, unknown> }, index: number) => {
+            // Prepare step metadata with waiting fields for the first step if needed
+            const stepMetadata = {
+              ...(step.metadata || {}),
+              // Only add waiting fields to the first step if needed
+              ...(index === 0 ? {
+                waitingFor: waitingFor || null,
+                waitingSince: index === 0 && waitingFor ? (waitingSince ? new Date(waitingSince) : new Date()) : null,
+                resumeAfter: index === 0 && resumeAfter ? new Date(resumeAfter) : null
+              } : {})
+            };
+            
+            return {
+              stepNumber: index + 1,
+              title: step.title,
+              description: step.description || "",
+              status: index === 0 ? initialStatus : TaskStatus.PENDING,
+              metadata: stepMetadata
+            };
+          })
         } : undefined
       },
       include: {

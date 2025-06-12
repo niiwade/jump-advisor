@@ -331,7 +331,9 @@ export function hasTaskWaitingExpired(task: BaseTask): boolean {
 export function getCurrentStep(task: BaseTask): TaskStep | null {
   if (!task?.steps || task.steps.length === 0) return null;
   
-  return task.steps.find((step: TaskStep) => step.stepNumber === task.currentStep) || null;
+  // Get currentStep from metadata or default to 1
+  const currentStepNumber = task.metadata?.currentStep as number || 1;
+  return task.steps.find((step: TaskStep) => step.stepNumber === currentStepNumber) || null;
 }
 
 /**

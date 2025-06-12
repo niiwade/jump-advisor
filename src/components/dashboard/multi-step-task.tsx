@@ -34,7 +34,6 @@ import {
   resumeTask, 
   setTaskWaiting, 
   calculateTaskProgress, 
-  getCurrentStep,
   formatWaitingDuration
 } from '@/lib/client/task-utils';
 
@@ -58,7 +57,8 @@ interface Task {
   description?: string;
   status: string;
   type: string;
-  currentStep: number;
+  // currentStep field doesn't exist in the database, so we'll get it from metadata
+  // currentStep: number;
   totalSteps: number;
   steps?: TaskStep[];
   waitingFor?: string;
@@ -67,7 +67,7 @@ interface Task {
   completedAt?: string;
   createdAt: string;
   updatedAt: string;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> & { currentStep?: number };
 }
 
 interface MultiStepTaskProps {
@@ -99,7 +99,9 @@ export function MultiStepTask({ task, onTaskUpdated, onTaskCompleted }: MultiSte
   const [waitingDuration, setWaitingDuration] = useState<number>(60); // Default 60 minutes
   
   const progress = calculateTaskProgress(task);
-  const currentStep = getCurrentStep(task);
+  // Get currentStep from metadata or default to 1
+  const currentStepNumber = task.metadata?.currentStep || 1;
+  const currentStep = task.steps?.find(step => step.stepNumber === currentStepNumber);
   // Task status flags
   const isTaskWaiting = task.status === TaskStatus.WAITING_FOR_RESPONSE;
   
@@ -208,7 +210,7 @@ export function MultiStepTask({ task, onTaskUpdated, onTaskCompleted }: MultiSte
         <div className="mb-4">
           <div className="flex justify-between items-center mb-2">
             <span className="text-sm font-medium">
-              Progress: Step {task.currentStep} of {task.totalSteps}
+              Progress: Step {currentStepNumber} of {task.totalSteps}
             </span>
             <span className="text-sm font-medium">{progress}%</span>
           </div>
@@ -272,14 +274,14 @@ export function MultiStepTask({ task, onTaskUpdated, onTaskCompleted }: MultiSte
                         <Clock className="w-4 h-4 mr-2 text-amber-500" />
                       ) : step.status === TaskStatus.FAILED ? (
                         <XCircle className="w-4 h-4 mr-2 text-red-500" />
-                      ) : step.stepNumber === task.currentStep ? (
+                      ) : step.stepNumber === currentStepNumber ? (
                         <Loader2 className="w-4 h-4 mr-2 text-blue-500" />
                       ) : (
                         <div className="w-4 h-4 mr-2 rounded-full border-2 border-gray-300" />
                       )}
-                      <span className={`${step.stepNumber === task.currentStep ? 'font-medium' : ''}`}>
+                      <div className={`flex items-center gap-2 ${step.stepNumber === currentStepNumber ? 'font-medium' : ''}`}>
                         {step.stepNumber}. {step.title}
-                      </span>
+                      </div>
                     </div>
                     <StatusBadge status={step.status} />
                   </div>
@@ -376,7 +378,7 @@ export function MultiStepTask({ task, onTaskUpdated, onTaskCompleted }: MultiSte
             </Button>
           )}
           
-          {currentStep && task.currentStep < task.totalSteps && task.status !== TaskStatus.COMPLETED && (
+          {currentStep && currentStepNumber < task.totalSteps && task.status === TaskStatus.IN_PROGRESS && (
             <Button
               onClick={handleAdvanceStep}
               disabled={isLoading === 'advancing' || currentStep.status !== TaskStatus.COMPLETED}

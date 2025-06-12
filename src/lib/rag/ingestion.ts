@@ -43,6 +43,13 @@ export async function ingestAllData(userId: string): Promise<TaskResult> {
         description: "Importing emails, calendar events, and contacts for RAG",
         type: "GENERAL",
         status: "IN_PROGRESS",
+        metadata: {
+          currentStep: 1,
+          totalSteps: 3, // Three steps: emails, calendar, contacts
+          emailsImported: 0,
+          calendarEventsImported: 0,
+          contactsImported: 0
+        }
       },
     });
     
@@ -124,6 +131,11 @@ export async function ingestEmails(userId: string): Promise<TaskResult> {
         description: "Importing emails for RAG",
         type: "EMAIL",
         status: "IN_PROGRESS",
+        metadata: {
+          currentStep: 1,
+          totalSteps: 1,
+          emailsImported: 0
+        }
       },
     });
     
@@ -179,6 +191,11 @@ export async function ingestCalendarEvents(userId: string): Promise<TaskResult> 
         description: "Importing calendar events for RAG",
         type: "CALENDAR",
         status: "IN_PROGRESS",
+        metadata: {
+          currentStep: 1,
+          totalSteps: 1,
+          eventsImported: 0
+        }
       },
     });
     
@@ -234,6 +251,11 @@ export async function ingestHubspotContacts(userId: string): Promise<TaskResult>
         description: "Importing HubSpot contacts for RAG",
         type: "HUBSPOT",
         status: "IN_PROGRESS",
+        metadata: {
+          currentStep: 1,
+          totalSteps: 1,
+          contactsImported: 0
+        }
       },
     });
     

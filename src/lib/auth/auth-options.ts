@@ -26,6 +26,7 @@ export const authOptions: NextAuthOptions = {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID as string,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
+      allowDangerousEmailAccountLinking: true, // Fix for OAuthAccountNotLinked errors
     }),
     // @ts-expect-error - HubSpot provider type is not fully compatible with NextAuth types
     HubspotProvider({
@@ -41,9 +42,38 @@ export const authOptions: NextAuthOptions = {
       }
       return session;
     },
+    async signIn({ account }) {
+      // Handle the unsupported refresh_token_expires_in field from Google OAuth
+      // Define a type for the Google account that includes the unsupported field
+      interface GoogleOAuthAccount {
+        provider: string;
+        refresh_token_expires_in?: number;
+      }
+      
+      if (account && account.provider === 'google' && (account as GoogleOAuthAccount).refresh_token_expires_in) {
+        // Remove or convert the field to avoid errors
+        delete (account as GoogleOAuthAccount).refresh_token_expires_in;
+      }
+      return true;
+    },
+    async redirect({ url, baseUrl }) {
+      // Redirect to dashboard after successful login
+      if (url.startsWith(baseUrl)) {
+        if (url.includes('callbackUrl')) {
+          return url;
+        }
+        return `${baseUrl}/dashboard`;
+      }
+      // Redirect to dashboard if on same host
+      else if (url.startsWith('/')) {
+        return `${baseUrl}/dashboard`;
+      }
+      return baseUrl;
+    },
   },
   pages: {
-    signIn: "/auth/signin",
+    signIn: "/login",
+    error: "/login",
   },
   session: {
     strategy: "jwt",

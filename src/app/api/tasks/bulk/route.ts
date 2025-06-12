@@ -118,9 +118,41 @@ export async function GET(req: NextRequest) {
         updatedAt: "desc",
       },
       take: limit,
+      // Select only the fields that exist in the database
+      select: {
+        id: true,
+        userId: true,
+        title: true,
+        description: true,
+        status: true,
+        type: true,
+        metadata: true,
+        parentTaskId: true,
+        createdAt: true,
+        updatedAt: true,
+        completedAt: true,
+        // Exclude fields that don't exist in the database:
+        // - currentStep, totalSteps, waitingFor, waitingSince, resumeAfter
+      },
     });
     
-    return NextResponse.json({ tasks });
+    // Define a type for task metadata that includes our custom fields
+    interface TaskMetadata {
+      currentStep?: number;
+      totalSteps?: number;
+      [key: string]: unknown;
+    }
+    
+    // Add default currentStep and totalSteps values to each task
+    const tasksWithMissingFields = tasks.map(task => ({
+      ...task,
+      // Get currentStep from metadata or default to 1
+      currentStep: (task.metadata as TaskMetadata)?.currentStep || 1,
+      // Get totalSteps from metadata or default to 1
+      totalSteps: (task.metadata as TaskMetadata)?.totalSteps || 1,
+    }));
+    
+    return NextResponse.json({ tasks: tasksWithMissingFields });
   } catch (error) {
     console.error("Error fetching filtered tasks:", error);
     return NextResponse.json(

@@ -154,9 +154,12 @@ export async function POST(request: NextRequest) {
       },
     });
     
-    // If the task has steps, update the current step as well
+    // If the task has steps, try to find the current step from metadata
     if (task.steps && task.steps.length > 0) {
-      const currentStep = task.steps.find(step => step.stepNumber === task.currentStep);
+      // Get current step from metadata or default to 1
+      const metadata = task.metadata as { currentStep?: number } || {};
+      const currentStepNumber = metadata.currentStep || 1;
+      const currentStep = task.steps.find(step => step.stepNumber === currentStepNumber);
       
       if (currentStep) {
         await prisma.taskStep.update({
