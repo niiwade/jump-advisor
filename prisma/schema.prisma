@@ -181,6 +181,7 @@ enum TaskType {
   CALENDAR
   HUBSPOT
   GENERAL
+  CONTACT_DISAMBIGUATION
 }
 
 enum IngestionType {

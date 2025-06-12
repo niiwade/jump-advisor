@@ -61,9 +61,28 @@ export async function sendEmail(
   subject: string,
   body: string
 ) {
+  // Validate inputs
+  const validationErrors = [];
+  
+  if (!userId) validationErrors.push("User ID is required");
+  if (!to) validationErrors.push("Recipient email is required");
+  if (!to.includes('@')) validationErrors.push("Invalid recipient email format");
+  if (!subject) validationErrors.push("Email subject is required");
+  if (!body) validationErrors.push("Email body is required");
+  
+  if (validationErrors.length > 0) {
+    console.error("Email validation errors:", validationErrors);
+    return {
+      success: false,
+      error: "Validation failed",
+      validationErrors,
+      message: "Unable to send email: " + validationErrors.join(", ")
+    };
+  }
+  
   try {
     const gmail = await getGmailClient(userId);
-
+    
     // Create email content
     const emailContent = [
       `To: ${to}`,
@@ -91,12 +110,15 @@ export async function sendEmail(
     return {
       success: true,
       messageId: response.data.id,
+      message: `Email successfully sent to ${to}`
     };
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error("Error sending email:", error);
     return {
       success: false,
-      error: "Failed to send email",
+      error: errorMessage,
+      message: `Failed to send email: ${errorMessage}`
     };
   }
 }

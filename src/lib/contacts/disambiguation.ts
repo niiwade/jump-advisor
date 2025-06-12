@@ -145,7 +145,7 @@ export async function createDisambiguationTask(
         userId,
         title: `Disambiguate contact: ${contactReference}`,
         description: `Please select the correct contact for "${contactReference}"`,
-        type: TaskType.CONTACT_DISAMBIGUATION,
+        type: TaskType.GENERAL, // Using a valid TaskType enum value
         status: TaskStatus.WAITING_FOR_RESPONSE,
         waitingFor: "Contact selection",
         waitingSince: new Date(),
@@ -231,7 +231,7 @@ export async function resolveDisambiguation(
     const task = await prisma.task.findUnique({
       where: {
         id: taskId,
-        type: TaskType.CONTACT_DISAMBIGUATION,
+        type: TaskType.GENERAL, // Using a valid TaskType enum value
       },
     });
     

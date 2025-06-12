@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useChat } from "ai/react";
+import { toast } from "react-hot-toast";
+import { Loader2 } from "lucide-react";
 
 interface ChatInterfaceProps {
   user: {
@@ -14,6 +16,7 @@ interface ChatInterfaceProps {
 
 export default function ChatInterface({ user }: ChatInterfaceProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [processingType, setProcessingType] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   const { messages, input, handleInputChange, handleSubmit } = useChat({
@@ -22,9 +25,23 @@ export default function ChatInterface({ user }: ChatInterfaceProps) {
     body: {
       userId: user.id
     },
-    onResponse: () => {
+    onResponse: (response) => {
       setIsLoading(false);
+      setProcessingType(null);
+      
+      // Check if the response contains a task creation confirmation
+      if (response.ok) {
+        const responseText = response.statusText || '';
+        if (responseText.includes('task') || responseText.includes('Task')) {
+          toast.success('Task created successfully!');
+        }
+      }
     },
+    onError: (error) => {
+      setIsLoading(false);
+      setProcessingType(null);
+      toast.error(`Error: ${error.message || 'Something went wrong'}`);
+    }
   });
 
   // Scroll to bottom when messages change
@@ -36,6 +53,17 @@ export default function ChatInterface({ user }: ChatInterfaceProps) {
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (input.trim() === "") return;
+    
+    // Detect if this is an email drafting request
+    const inputLower = input.toLowerCase();
+    if (inputLower.includes('draft an email') || inputLower.includes('write an email')) {
+      setProcessingType('email');
+    } else if (inputLower.includes('schedule') || inputLower.includes('appointment')) {
+      setProcessingType('calendar');
+    } else if (inputLower.includes('contact') || inputLower.includes('hubspot')) {
+      setProcessingType('contact');
+    }
+    
     setIsLoading(true);
     handleSubmit(e);
   };
@@ -105,12 +133,21 @@ export default function ChatInterface({ user }: ChatInterfaceProps) {
           />
           <button
             type="submit"
-            className={`rounded-md bg-blue-500 px-4 py-2 text-white ${
-              isLoading ? "opacity-50" : "hover:bg-blue-600"
+            className={`rounded-md bg-blue-500 px-4 py-2 text-white flex items-center justify-center min-w-[100px] ${
+              isLoading ? "opacity-80" : "hover:bg-blue-600"
             }`}
             disabled={isLoading}
           >
-            {isLoading ? "Thinking..." : "Send"}
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                {processingType === 'email' ? 'Creating email task...' : 
+                 processingType === 'calendar' ? 'Scheduling...' : 
+                 processingType === 'contact' ? 'Processing contact...' : 'Processing...'}
+              </>
+            ) : (
+              "Send"
+            )}
           </button>
         </form>
       </div>

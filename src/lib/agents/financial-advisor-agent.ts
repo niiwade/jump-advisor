@@ -6,7 +6,7 @@ import { createHubspotContact } from "@/lib/api/hubspot";
 import { sendEmail } from "@/lib/api/gmail";
 import { createCalendarEvent, getAvailableTimes } from "@/lib/api/calendar";
 import { handleContactDisambiguation, resolveDisambiguation } from "@/lib/contacts/disambiguation";
-import { TaskStatus, TaskType } from "@prisma/client";
+import { TaskStatus } from "@prisma/client";
 import { ChatCompletionMessageParam } from "openai/resources";
 
 // Initialize OpenAI client
@@ -549,7 +549,47 @@ async function handleToolCall(userId: string, toolCall: { function: { name: stri
     case "get_available_times":
       return getAvailableTimes(userId, parsedArgs.startDate, parsedArgs.endDate, parsedArgs.duration);
     case "send_email":
-      return sendEmail(userId, parsedArgs.to, parsedArgs.subject, parsedArgs.body);
+      try {
+        // Validate required email parameters
+        if (!parsedArgs.to || !parsedArgs.to.includes('@')) {
+          // Create a task instead of directly sending when email is incomplete
+          const task = await prisma.task.create({
+            data: {
+              userId,
+              title: `Draft email: ${parsedArgs.subject || 'No subject'}`,
+              description: `Draft an email${parsedArgs.to ? ' to ' + parsedArgs.to : ''} with the following content:\n\n${parsedArgs.body || 'No content provided'}`,
+              type: 'EMAIL',
+              status: 'PENDING',
+              metadata: {
+                emailDraft: {
+                  to: parsedArgs.to || '',
+                  subject: parsedArgs.subject || '',
+                  body: parsedArgs.body || ''
+                },
+                currentStep: 1,
+                totalSteps: 1
+              },
+            },
+          });
+          
+          return { 
+            success: false, 
+            taskCreated: true,
+            taskId: task.id,
+            message: `I couldn't send the email directly because ${!parsedArgs.to ? 'no recipient was specified' : 'the recipient email address is incomplete'}. I've created a task for you to review and complete the email draft.` 
+          };
+        }
+        
+        // If all required info is present, proceed with sending the email
+        return sendEmail(userId, parsedArgs.to, parsedArgs.subject, parsedArgs.body);
+      } catch (error) {
+        console.error("Error in send_email tool:", error);
+        return { 
+          success: false, 
+          error: error instanceof Error ? error.message : 'Unknown error sending email',
+          message: "I encountered an issue while trying to send your email. Please try again with complete information." 
+        };
+      }
     case "create_calendar_event":
       return createCalendarEvent(
         userId,
@@ -601,7 +641,7 @@ async function handleToolCall(userId: string, toolCall: { function: { name: stri
 }
 
 // Get context for the agent
-async function getContext(userId: string) {
+async function getUserContext(userId: string) {
   // Get active instructions
   const instructions = await prisma.instruction.findMany({
     where: {
@@ -621,11 +661,15 @@ async function getContext(userId: string) {
   });
 
   // Get disambiguation tasks specifically
+  console.log('DEBUG: Getting disambiguation tasks by title only');
   const disambiguationTasks = await prisma.task.findMany({
     where: {
       userId,
-      type: "CONTACT_DISAMBIGUATION" as TaskType,
       status: TaskStatus.WAITING_FOR_RESPONSE,
+      // Identify disambiguation tasks by title
+      title: {
+        contains: "Disambiguate contact"
+      },
     },
   });
 
@@ -642,18 +686,56 @@ async function getContext(userId: string) {
   };
 }
 
-// Process a user request
+// Process user request through the agent
 export async function processUserRequest(
   userId: string,
   userMessage: string,
-  chatHistory: Message[]
+  chatHistory: Message[] = []
 ) {
   try {
-    // Get context for the agent
-    const context = await getContext(userId);
+    // Get user context
+    const context = await getUserContext(userId);
+    
+    // Check if this is an email drafting request without specific details
+    const isEmailDraftRequest = userMessage.toLowerCase().includes('draft an email') || 
+                               userMessage.toLowerCase().includes('write an email');
+    const hasEmailAddress = userMessage.includes('@');
+    
+    // If it's an email draft request without an email address, fast-track to task creation
+    if (isEmailDraftRequest && !hasEmailAddress) {
+      // Extract potential recipient name using simple regex
+      const recipientMatch = userMessage.match(/(?:to|for)\s+([A-Za-z]+)/i);
+      const recipient = recipientMatch ? recipientMatch[1] : '';
+      
+      // Extract potential subject using simple heuristic
+      const subjectMatch = userMessage.match(/(?:about|regarding|re:|subject:|on)\s+([^,.]+)/i);
+      const subject = subjectMatch ? subjectMatch[1].trim() : 'discussed topic';
+      
+      // Create a task for the email draft
+      const emailTask = await prisma.task.create({
+        data: {
+          userId,
+          title: `Draft email to ${recipient || 'recipient'}`,
+          description: `Draft an email to ${recipient || 'recipient'} about ${subject}`,
+          type: 'EMAIL',
+          status: 'PENDING',
+          metadata: {
+            emailDraft: {
+              to: recipient || '',
+              subject: subject || '',
+              body: ''
+            },
+            currentStep: 1,
+            totalSteps: 1
+          },
+        },
+      });
+      
+      return `I've created a task to draft an email to ${recipient || 'the recipient'} about ${subject}. You can find it in your tasks panel (Task ID: ${emailTask.id}) where you can add more details and send it when ready.`;
+    }
 
     // Create system message with context
-    const systemMessage = `You are an AI assistant for financial advisors. You help manage client relationships by integrating with Gmail, Google Calendar, and HubSpot.
+    const systemMessage = `You are an AI assistant for a financial advisor. You help manage emails, calendar, tasks, and HubSpot contacts.
     
     Current ongoing instructions: ${JSON.stringify(context.instructions)}
     
@@ -695,7 +777,10 @@ export async function processUserRequest(
     5. Once selected, use resolve_disambiguation to complete the process
     
     When handling tasks like scheduling appointments, use the appropriate tools to complete the task.
-    Always be helpful, professional, and concise in your responses.`;
+    Always be helpful, professional, and concise in your responses.
+    
+    When the user asks to draft an email without providing a complete email address, create a task for them instead of attempting to send directly.
+    For email drafting requests, if you don't have complete information, create a task and explain what additional information is needed.`;
 
     // Format chat history for OpenAI
     const messages: ChatCompletionMessageParam[] = [
