@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/auth-options";
 import { prisma } from "@/lib/db/prisma";
-import { TaskStatus, Prisma } from "@prisma/client";
+import { TaskStatus } from "@prisma/client";
 
 interface StepResponse {
   timestamp: string;

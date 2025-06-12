@@ -493,10 +493,10 @@ export async function ingestCalendarEvents(userId: string): Promise<TaskResult> 
       await prisma.task.update({
         where: { id: task.id },
         data: {
-          metadata: {
+          metadata: serializeMetadata({
             ...taskMetadata,
             steps
-          }
+          })
         }
       });
     }
@@ -522,7 +522,7 @@ export async function ingestCalendarEvents(userId: string): Promise<TaskResult> 
       where: { id: task.id },
       data: {
         status: result.success ? "COMPLETED" : "FAILED",
-        metadata: updatedMetadata,
+        metadata: serializeMetadata(updatedMetadata),
       },
     });
     
@@ -589,10 +589,10 @@ export async function ingestHubspotContacts(userId: string): Promise<TaskResult>
       await prisma.task.update({
         where: { id: task.id },
         data: {
-          metadata: {
+          metadata: serializeMetadata({
             ...taskMetadata,
             steps
-          }
+          })
         }
       });
     }
@@ -618,7 +618,7 @@ export async function ingestHubspotContacts(userId: string): Promise<TaskResult>
       where: { id: task.id },
       data: {
         status: result.success ? "COMPLETED" : "FAILED",
-        metadata: updatedMetadata,
+        metadata: serializeMetadata(updatedMetadata),
       },
     });
     
