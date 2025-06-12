@@ -57,8 +57,9 @@ export async function GET(request: NextRequest) {
         completedAt: true,
         // Exclude fields that don't exist in the database:
         // - currentStep, totalSteps, waitingFor, waitingSince, resumeAfter, parentTaskId
-        steps: includeSteps,
       },
+      // Handle steps separately with include instead of select
+      include: includeSteps ? { steps: true } : undefined,
     });
     
     // Define a type for task metadata that includes our custom fields
@@ -73,19 +74,27 @@ export async function GET(request: NextRequest) {
     }
     
     // Add default values and filter by parentTaskId if needed
-    let tasksWithMissingFields = tasks.map(task => ({
-      ...task,
-      // Get currentStep from metadata or default to 1
-      currentStep: (task.metadata as TaskMetadata)?.currentStep || 1,
-      // Get totalSteps from steps length or from metadata or default to 1
-      totalSteps: task.steps?.length || (task.metadata as TaskMetadata)?.totalSteps || 1,
-      // Get parentTaskId from metadata
-      parentTaskId: (task.metadata as TaskMetadata)?.parentTaskId || null,
-      // Get waiting fields from metadata
-      waitingFor: (task.metadata as TaskMetadata)?.waitingFor || null,
-      waitingSince: (task.metadata as TaskMetadata)?.waitingSince || null,
-      resumeAfter: (task.metadata as TaskMetadata)?.resumeAfter || null
-    }));
+    let tasksWithMissingFields = tasks.map(task => {
+      // Handle the task structure based on whether steps were included
+      // Define a type that includes the potential steps property
+      type TaskWithSteps = typeof task & { steps?: Array<{ stepNumber: number }> };      
+      const taskWithSteps = task as TaskWithSteps;
+      const stepsLength = taskWithSteps.steps ? taskWithSteps.steps.length : 0;
+      
+      return {
+        ...task,
+        // Get currentStep from metadata or default to 1
+        currentStep: (task.metadata as TaskMetadata)?.currentStep || 1,
+        // Get totalSteps from steps length or from metadata or default to 1
+        totalSteps: stepsLength || (task.metadata as TaskMetadata)?.totalSteps || 1,
+        // Get parentTaskId from metadata
+        parentTaskId: (task.metadata as TaskMetadata)?.parentTaskId || null,
+        // Get waiting fields from metadata
+        waitingFor: (task.metadata as TaskMetadata)?.waitingFor || null,
+        waitingSince: (task.metadata as TaskMetadata)?.waitingSince || null,
+        resumeAfter: (task.metadata as TaskMetadata)?.resumeAfter || null
+      };
+    });
     
     // Filter by parentTaskId if provided (now using the metadata-derived field)
     if (parentTaskId) {

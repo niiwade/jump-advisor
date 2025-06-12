@@ -27,6 +27,13 @@ export const authOptions: NextAuthOptions = {
       clientId: process.env.GOOGLE_CLIENT_ID as string,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
       allowDangerousEmailAccountLinking: true, // Fix for OAuthAccountNotLinked errors
+      authorization: {
+        params: {
+          scope: 'openid email profile https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly',
+          prompt: "consent",
+          access_type: "offline",
+        }
+      }
     }),
     // @ts-expect-error - HubSpot provider type is not fully compatible with NextAuth types
     HubspotProvider({

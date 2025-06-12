@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/auth-options";
 import { prisma } from "@/lib/db/prisma";
-import { TaskStatus } from "@prisma/client";
+import { TaskStatus, Prisma } from "@prisma/client";
+
+interface StepResponse {
+  timestamp: string;
+  response: unknown;
+  waitedFor: string | null;
+}
 
 // GET all tasks that are in a waiting state
 export async function GET(request: NextRequest) {
@@ -182,10 +188,8 @@ export async function POST(request: NextRequest) {
     
     // If the task has steps, try to find the current step from metadata
     if (task.steps && task.steps.length > 0) {
-      // Get current step from metadata or default to 1
-      const metadata = task.metadata as { currentStep?: number } || {};
-      const currentStepNumber = metadata.currentStep || 1;
-      const currentStep = task.steps.find(step => step.stepNumber === currentStepNumber);
+      // Get the current step based on status
+      const currentStep = task.steps.find(step => step.status === "IN_PROGRESS") || task.steps[0];
       
       if (currentStep) {
         // Get the step metadata
@@ -199,8 +203,7 @@ export async function POST(request: NextRequest) {
           waitingSince: null,
           resumeAfter: null,
           responses: [
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            ...((stepMetadata.responses as any[]) || []),
+            ...((stepMetadata.responses as StepResponse[]) || []),
             response !== undefined ? {
               timestamp: new Date().toISOString(),
               response,
