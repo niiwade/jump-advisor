@@ -7,27 +7,55 @@ import { processUserRequest } from "@/lib/agents/financial-advisor-agent";
 import { AxiosInstance } from 'axios';
 
 // Define a custom type for the HubSpot client that extends AxiosInstance
-type HubspotClient = AxiosInstance & {
+export type HubspotClient = AxiosInstance & {
   crm: {
     contacts: {
       basicApi: {
-        getById: (id: string, properties: string[]) => Promise<{ body: HubspotContact }>
+        getById: (id: string, properties: string[]) => Promise<{ body: HubspotContact }>,
+        getPage: (
+          after?: string,
+          before?: string,
+          limit?: number,
+          properties?: string[],
+          filterQuery?: string
+        ) => Promise<{ body: { results: HubspotContact[] } }>
       }
     },
     notes: {
       basicApi: {
-        getById: (id: string) => Promise<{ body: HubspotNote }>
+        getById: (id: string) => Promise<{ body: HubspotNote }>,
+        getPage: (
+          after?: string,
+          before?: string,
+          limit?: number,
+          properties?: string[],
+          filterQuery?: string
+        ) => Promise<{ body: { results: HubspotNote[] } }>
       }
     },
     deals: {
       basicApi: {
-        getById: (id: string, properties?: string[]) => Promise<{ body: HubspotDeal }>
+        getById: (id: string, properties?: string[]) => Promise<{ body: HubspotDeal }>,
+        getPage: (
+          after?: string,
+          before?: string,
+          limit?: number,
+          properties?: string[],
+          filterQuery?: string
+        ) => Promise<{ body: { results: HubspotDeal[] } }>
       }
     },
     objects: {
       notes: {
         basicApi: {
-          getById: (id: string) => Promise<{ body: HubspotNote }>
+          getById: (id: string) => Promise<{ body: HubspotNote }>,
+          getPage: (
+            after?: string,
+            before?: string,
+            limit?: number,
+            properties?: string[],
+            filterQuery?: string
+          ) => Promise<{ body: { results: HubspotNote[] } }>
         },
         associationsApi: {
           getAll: (id: string, toObjectType: string) => Promise<{ 
@@ -42,7 +70,7 @@ type HubspotClient = AxiosInstance & {
 };
 
 // Define the structure of HubSpot event data
-interface HubspotEventData {
+export interface HubspotEventData {
   objectId: string;
   objectType: string;
   eventType: string;

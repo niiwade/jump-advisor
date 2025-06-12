@@ -1,0 +1,43 @@
+/**
+ * HubSpot OAuth Provider for NextAuth.js
+ * 
+ * Required scopes for contacts access:
+ * - crm.objects.contacts.read
+ * - crm.objects.contacts.write
+ * - content (for notes)
+ */
+
+// Simple provider implementation with correct OAuth scopes
+export default function HubspotProvider(options) {
+  return {
+    id: "hubspot",
+    name: "HubSpot",
+    type: "oauth",
+    authorization: {
+      url: "https://app.hubspot.com/oauth/authorize",
+      params: {
+        client_id: options.clientId,
+        // Updated scopes to match HubSpot's current API requirements
+        scope: "crm.objects.contacts.read crm.objects.contacts.write content",
+        redirect_uri: options.callbackUrl,
+      },
+    },
+    token: "https://api.hubapi.com/oauth/v1/token",
+    userinfo: {
+      url: "https://api.hubapi.com/oauth/v1/access-tokens/",
+      async request({ tokens, client }) {
+        const profile = await client.userinfo(tokens.access_token);
+        return profile;
+      },
+    },
+    profile(profile) {
+      return {
+        id: profile.user_id || profile.id,
+        email: profile.email,
+        name: profile.name || `${profile.firstName || ''} ${profile.lastName || ''}`.trim(),
+        image: null,
+      };
+    },
+    options,
+  };
+}

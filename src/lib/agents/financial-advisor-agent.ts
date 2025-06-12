@@ -5,6 +5,9 @@ import { searchEmails, searchContacts, searchCalendarEvents } from "@/lib/rag/se
 import { createHubspotContact } from "@/lib/api/hubspot";
 import { sendEmail } from "@/lib/api/gmail";
 import { createCalendarEvent, getAvailableTimes } from "@/lib/api/calendar";
+import { handleContactDisambiguation, resolveDisambiguation } from "@/lib/contacts/disambiguation";
+import { TaskStatus, TaskType } from "@prisma/client";
+import { ChatCompletionMessageParam } from "openai/resources";
 
 // Initialize OpenAI client
 const openai = new OpenAI({
@@ -14,7 +17,49 @@ const openai = new OpenAI({
 // Define tool schemas for the agent
 const tools = [
   {
-    type: "function",
+    type: "function" as const,
+    function: {
+      name: "disambiguate_contact",
+      description: "Check if a contact reference is ambiguous and needs disambiguation",
+      parameters: {
+        type: "object",
+        properties: {
+          contactReference: {
+            type: "string",
+            description: "The contact name, email, or description to check for ambiguity",
+          },
+          context: {
+            type: "string",
+            description: "Additional context about why disambiguation is needed",
+          },
+        },
+        required: ["contactReference"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "resolve_disambiguation",
+      description: "Resolve a contact disambiguation task with the selected contact",
+      parameters: {
+        type: "object",
+        properties: {
+          taskId: {
+            type: "string",
+            description: "The disambiguation task ID",
+          },
+          selectedContactId: {
+            type: "string",
+            description: "The ID of the selected contact",
+          },
+        },
+        required: ["taskId", "selectedContactId"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
     function: {
       name: "search_emails",
       description: "Search through user emails for relevant information",
@@ -253,50 +298,273 @@ const tools = [
       },
     },
   },
+  {
+    type: "function" as const,
+    function: {
+      name: "search_contacts",
+      description: "Search through contacts",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "The search query",
+          },
+          limit: {
+            type: "number",
+            description: "The maximum number of results to return",
+          },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "search_calendar",
+      description: "Search through calendar events",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "The search query",
+          },
+          startDate: {
+            type: "string",
+            description: "The start date of the search range",
+          },
+          endDate: {
+            type: "string",
+            description: "The end date of the search range",
+          },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "get_available_times",
+      description: "Get available time slots",
+      parameters: {
+        type: "object",
+        properties: {
+          startDate: {
+            type: "string",
+            description: "The start date of the search range",
+          },
+          endDate: {
+            type: "string",
+            description: "The end date of the search range",
+          },
+          duration: {
+            type: "number",
+            description: "The duration of the meeting",
+          },
+        },
+        required: ["startDate", "endDate", "duration"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "send_email",
+      description: "Send an email",
+      parameters: {
+        type: "object",
+        properties: {
+          to: {
+            type: "string",
+            description: "The recipient's email address",
+          },
+          subject: {
+            type: "string",
+            description: "The subject of the email",
+          },
+          body: {
+            type: "string",
+            description: "The body of the email",
+          },
+        },
+        required: ["to", "subject", "body"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "create_calendar_event",
+      description: "Create a calendar event",
+      parameters: {
+        type: "object",
+        properties: {
+          title: {
+            type: "string",
+            description: "The title of the event",
+          },
+          startTime: {
+            type: "string",
+            description: "The start time of the event",
+          },
+          endTime: {
+            type: "string",
+            description: "The end time of the event",
+          },
+          description: {
+            type: "string",
+            description: "The description of the event",
+          },
+          attendees: {
+            type: "array",
+            items: {
+              type: "string",
+            },
+            description: "The attendees of the event",
+          },
+        },
+        required: ["title", "startTime", "endTime"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "create_hubspot_contact",
+      description: "Create a HubSpot contact",
+      parameters: {
+        type: "object",
+        properties: {
+          email: {
+            type: "string",
+            description: "The email address of the contact",
+          },
+          firstName: {
+            type: "string",
+            description: "The first name of the contact",
+          },
+          lastName: {
+            type: "string",
+            description: "The last name of the contact",
+          },
+          company: {
+            type: "string",
+            description: "The company of the contact",
+          },
+          jobTitle: {
+            type: "string",
+            description: "The job title of the contact",
+          },
+        },
+        required: ["email"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "save_instruction",
+      description: "Save an instruction",
+      parameters: {
+        type: "object",
+        properties: {
+          instruction: {
+            type: "string",
+            description: "The instruction to save",
+          },
+        },
+        required: ["instruction"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "get_instructions",
+      description: "Get instructions",
+      parameters: {
+        type: "object",
+        properties: {},
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "create_task",
+      description: "Create a task",
+      parameters: {
+        type: "object",
+        properties: {
+          title: {
+            type: "string",
+            description: "The title of the task",
+          },
+          description: {
+            type: "string",
+            description: "The description of the task",
+          },
+          type: {
+            type: "string",
+            enum: ["EMAIL", "CALENDAR", "HUBSPOT", "GENERAL"],
+            description: "The type of the task",
+          },
+          metadata: {
+            type: "object",
+            description: "The metadata of the task",
+          },
+        },
+        required: ["title", "type"],
+      },
+    },
+  },
 ];
 
 // Tool implementations
-async function handleToolCall(userId: string, toolCall: any) {
-  const { name, arguments: args } = toolCall.function;
-  const parsedArgs = JSON.parse(args);
+async function handleToolCall(userId: string, toolCall: { function: { name: string, arguments: string } }) {
+  const { name, arguments: argsString } = toolCall.function;
+  const parsedArgs = JSON.parse(argsString);
 
   switch (name) {
+    case "disambiguate_contact":
+      return handleContactDisambiguation(
+        userId,
+        parsedArgs.contactReference,
+        parsedArgs.context || ""
+      );
+    case "resolve_disambiguation":
+      return resolveDisambiguation(
+        parsedArgs.taskId,
+        parsedArgs.selectedContactId
+      );
     case "search_emails":
-      return await searchEmails(userId, parsedArgs.query, parsedArgs.limit || 5);
+      return searchEmails(userId, parsedArgs.query, parsedArgs.limit || 5);
     case "search_contacts":
-      return await searchContacts(userId, parsedArgs.query, parsedArgs.limit || 5);
+      return searchContacts(userId, parsedArgs.query, parsedArgs.limit || 5);
     case "search_calendar":
-      return await searchCalendarEvents(
-        userId,
-        parsedArgs.query,
-        parsedArgs.startDate,
-        parsedArgs.endDate
-      );
+      return searchCalendarEvents(userId, parsedArgs.query, parsedArgs.startDate, parsedArgs.endDate);
     case "get_available_times":
-      return await getAvailableTimes(
-        userId,
-        parsedArgs.startDate,
-        parsedArgs.endDate,
-        parsedArgs.duration
-      );
+      return getAvailableTimes(userId, parsedArgs.startDate, parsedArgs.endDate, parsedArgs.duration);
     case "send_email":
-      return await sendEmail(userId, parsedArgs.to, parsedArgs.subject, parsedArgs.body);
+      return sendEmail(userId, parsedArgs.to, parsedArgs.subject, parsedArgs.body);
     case "create_calendar_event":
-      return await createCalendarEvent(
+      return createCalendarEvent(
         userId,
         parsedArgs.title,
-        parsedArgs.description,
         parsedArgs.startTime,
         parsedArgs.endTime,
+        parsedArgs.description,
         parsedArgs.attendees
       );
     case "create_hubspot_contact":
-      return await createHubspotContact(
+      return createHubspotContact(
         userId,
         parsedArgs.email,
         parsedArgs.firstName,
-        parsedArgs.lastName,
-        parsedArgs.notes
+        parsedArgs.lastName
       );
     case "save_instruction":
       await prisma.instruction.create({
@@ -352,6 +620,15 @@ async function getContext(userId: string) {
     },
   });
 
+  // Get disambiguation tasks specifically
+  const disambiguationTasks = await prisma.task.findMany({
+    where: {
+      userId,
+      type: "CONTACT_DISAMBIGUATION" as TaskType,
+      status: TaskStatus.WAITING_FOR_RESPONSE,
+    },
+  });
+
   return {
     instructions: instructions.map(i => i.instruction),
     pendingTasks: tasks.map(t => ({
@@ -361,6 +638,7 @@ async function getContext(userId: string) {
       status: t.status,
       type: t.type,
     })),
+    disambiguationTasks: disambiguationTasks.length > 0 ? disambiguationTasks : undefined,
   };
 }
 
@@ -380,6 +658,26 @@ export async function processUserRequest(
     Current ongoing instructions: ${JSON.stringify(context.instructions)}
     
     Current pending tasks: ${JSON.stringify(context.pendingTasks)}
+    ${context.disambiguationTasks ? `
+    IMPORTANT - You have active contact disambiguation tasks:
+    ${JSON.stringify(context.disambiguationTasks.map(t => {
+      const metadata = t.metadata as Record<string, unknown> || {};
+      const potentialContacts = (metadata.potentialContacts as Array<Record<string, unknown>>) || [];
+      return {
+        id: t.id,
+        title: t.title,
+        contactReference: metadata.contactReference,
+        potentialContacts: potentialContacts.map(c => ({
+          id: c.id,
+          name: [c.firstName, c.lastName].filter(Boolean).join(' ') || 'Unknown',
+          email: c.email || 'No email',
+          similarity: c.similarity
+        }))
+      };
+    }))}
+    
+    When you see disambiguation tasks, help the user select the correct contact from the options.
+    ` : ''}
     
     Your capabilities:
     1. Search through emails and HubSpot contacts to answer questions about clients
@@ -387,22 +685,39 @@ export async function processUserRequest(
     3. Send emails on behalf of the financial advisor
     4. Create and update contacts in HubSpot
     5. Remember and follow ongoing instructions
+    6. Disambiguate contact references when they are ambiguous
     
-    When asked about a person and it's ambiguous who the user is referring to, search contacts and ask for clarification.
+    When asked about a person and it's ambiguous who the user is referring to:
+    1. Use the disambiguate_contact tool to check if disambiguation is needed
+    2. If disambiguation is needed, explain to the user that there are multiple potential matches
+    3. Present the options clearly with names and emails
+    4. Ask the user to select the correct contact
+    5. Once selected, use resolve_disambiguation to complete the process
+    
     When handling tasks like scheduling appointments, use the appropriate tools to complete the task.
     Always be helpful, professional, and concise in your responses.`;
 
     // Format chat history for OpenAI
-    const messages = [
+    const messages: ChatCompletionMessageParam[] = [
       { role: "system", content: systemMessage },
-      ...chatHistory.slice(-10), // Include last 10 messages for context
+      ...chatHistory.slice(-10).map(msg => ({
+        role: msg.role as "user" | "assistant" | "system",
+        content: msg.content
+      })),
     ];
 
     // Call OpenAI with function calling
     const response = await openai.chat.completions.create({
       model: "gpt-4-turbo",
       messages,
-      tools,
+      tools: tools as unknown as Array<{
+        type: "function";
+        function: {
+          name: string;
+          description: string;
+          parameters: Record<string, unknown>;
+        };
+      }>,
       tool_choice: "auto",
     });
 
@@ -428,8 +743,8 @@ export async function processUserRequest(
         model: "gpt-4-turbo",
         messages: [
           ...messages,
-          responseMessage,
-          ...toolResults,
+          responseMessage as ChatCompletionMessageParam,
+          ...toolResults as ChatCompletionMessageParam[],
         ],
       });
 

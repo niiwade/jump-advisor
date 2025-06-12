@@ -73,6 +73,15 @@ model Task {
   status      TaskStatus @default(PENDING)
   type        TaskType
   metadata    Json?
+  currentStep Int       @default(1)
+  totalSteps  Int       @default(1)
+  steps       TaskStep[]
+  waitingFor  String?   // What the task is waiting for (e.g., "user_input", "external_api")
+  waitingSince DateTime? // When the task started waiting
+  resumeAfter DateTime? // When to automatically resume the task if applicable
+  parentTaskId String?   // For subtasks, reference to parent task
+  parentTask  Task?     @relation("SubTasks", fields: [parentTaskId], references: [id], onDelete: SetNull)
+  subTasks    Task[]    @relation("SubTasks")
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   completedAt DateTime?
@@ -91,6 +100,27 @@ enum TaskType {
   CALENDAR
   HUBSPOT
   GENERAL
+  CONTACT_DISAMBIGUATION
+}
+
+// TaskStep model for multi-step tasks
+model TaskStep {
+  id          String    @id @default(cuid())
+  taskId      String
+  task        Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  stepNumber  Int
+  title       String
+  description String?   @db.Text
+  status      TaskStatus @default(PENDING)
+  metadata    Json?
+  waitingFor  String?   // What this step is waiting for
+  waitingSince DateTime? // When this step started waiting
+  resumeAfter DateTime? // When to automatically resume this step
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@unique([taskId, stepNumber])
 }
 
 // Instruction model for ongoing instructions

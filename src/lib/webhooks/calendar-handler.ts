@@ -124,7 +124,7 @@ export async function processCalendarUpdate(
  * @param userId The user ID
  * @param eventData The event data from Google Calendar
  */
-async function processCalendarEvent(
+export async function processCalendarEvent(
   userId: string,
   eventData: {
     id: string;
