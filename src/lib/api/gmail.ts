@@ -142,9 +142,9 @@ export async function importEmails(userId: string, options?: ImportOptions) {
       console.log('Fetching Gmail messages...');
       response = await gmail.users.messages.list({
         userId: "me",
-        maxResults: 100, // Adjust as needed
+        maxResults: 5, // Limited to 5 emails as requested
       });
-      console.log(`Found ${response.data.messages?.length || 0} messages`);
+      console.log(`Found ${response.data.messages?.length || 0} messages (limited to 5 max)`);
     } catch (apiError) {
       console.error('Gmail API error:', apiError);
       return { 

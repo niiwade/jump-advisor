@@ -2,12 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/auth-options";
 import { prisma } from "@/lib/db/prisma";
-import { TaskStatus } from "@prisma/client";
+import { TaskStatus, Prisma } from "@prisma/client";
 
 interface StepResponse {
   timestamp: string;
   response: unknown;
   waitedFor: string | null;
+}
+
+// Define a type for task metadata
+interface TaskMetadata {
+  waitingFor: string | null;
+  waitingSince: string | null;
+  resumeAfter: string | null;
+  responses: StepResponse[];
+  [key: string]: unknown;
 }
 
 // GET all tasks that are in a waiting state
@@ -28,7 +37,6 @@ export async function GET(request: NextRequest) {
     // Get query parameters
     const url = new URL(request.url);
     const waitingFor = url.searchParams.get('waitingFor');
-    const includeSteps = url.searchParams.get('includeSteps') === 'true';
     const includeExpired = url.searchParams.get('includeExpired') === 'true';
     
     // Build the query
@@ -40,25 +48,12 @@ export async function GET(request: NextRequest) {
       status: TaskStatus.WAITING_FOR_RESPONSE,
     };
     
-    // Note: waitingFor and resumeAfter are now in metadata, so we'll filter after fetching
-    
-    // Define a type for task metadata
-    interface TaskMetadata {
-      waitingFor?: string | null;
-      waitingSince?: string | null;
-      resumeAfter?: string | null;
-      [key: string]: unknown;
-    }
-
     // Get all waiting tasks
     const tasks = await prisma.task.findMany({
       where,
       orderBy: {
         updatedAt: "desc",
-      },
-      include: {
-        steps: includeSteps,
-      },
+      }
     });
     
     // Filter tasks based on metadata fields
@@ -130,10 +125,7 @@ export async function POST(request: NextRequest) {
         id: taskId,
         userId,
         status: TaskStatus.WAITING_FOR_RESPONSE,
-      },
-      include: {
-        steps: true,
-      },
+      }
     });
     
     if (!task) {
@@ -144,20 +136,17 @@ export async function POST(request: NextRequest) {
     }
     
     // Update the task metadata with the response if provided
-    // Define a type that matches Prisma's JSON structure
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    type PrismaJson = { [key: string]: any };
-    let updatedMetadata = (task.metadata || {}) as PrismaJson;
+    let updatedMetadata = (task.metadata || {}) as TaskMetadata;
     if (response !== undefined) {
+      const waitedFor = updatedMetadata.waitingFor ?? null;
       updatedMetadata = {
         ...updatedMetadata,
         responses: [
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ...((updatedMetadata.responses as any[]) || []),
+          ...(updatedMetadata.responses || []),
           {
             timestamp: new Date().toISOString(),
             response,
-            waitedFor: task.waitingFor,
+            waitedFor
           }
         ]
       };
@@ -178,51 +167,9 @@ export async function POST(request: NextRequest) {
       },
       data: {
         status,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        metadata: updatedMetadata as any,
-      },
-      include: {
-        steps: true,
-      },
-    });
-    
-    // If the task has steps, try to find the current step from metadata
-    if (task.steps && task.steps.length > 0) {
-      // Get the current step based on status
-      const currentStep = task.steps.find(step => step.status === "IN_PROGRESS") || task.steps[0];
-      
-      if (currentStep) {
-        // Get the step metadata
-        const stepMetadata = (currentStep.metadata || {}) as PrismaJson;
-        const waitedFor = stepMetadata.waitingFor;
-        
-        // Update the step metadata
-        const updatedStepMetadata = {
-          ...stepMetadata,
-          waitingFor: null,
-          waitingSince: null,
-          resumeAfter: null,
-          responses: [
-            ...((stepMetadata.responses as StepResponse[]) || []),
-            response !== undefined ? {
-              timestamp: new Date().toISOString(),
-              response,
-              waitedFor
-            } : null
-          ].filter(Boolean)
-        };
-        
-        await prisma.taskStep.update({
-          where: {
-            id: currentStep.id,
-          },
-          data: {
-            status,
-            metadata: updatedStepMetadata
-          },
-        });
+        metadata: updatedMetadata as Prisma.InputJsonValue,
       }
-    }
+    });
     
     return NextResponse.json(updatedTask);
   } catch (error) {

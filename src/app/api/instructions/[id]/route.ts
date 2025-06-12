@@ -5,9 +5,9 @@ import { prisma } from "@/lib/db/prisma";
 
 // PATCH update an instruction
 export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+  request: NextRequest,
+  context: { params: { id: string } }
+): Promise<NextResponse> {
   try {
     // Check authentication
     const session = await getServerSession(authOptions);
@@ -20,8 +20,8 @@ export async function PATCH(
     }
     
     const userId = session.user.id as string;
-    const instructionId = params.id;
-    const { active } = await req.json();
+    const instructionId = context.params.id;
+    const { active } = await request.json();
     
     // Validate input
     if (typeof active !== "boolean") {
@@ -74,9 +74,9 @@ export async function PATCH(
 
 // DELETE an instruction
 export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+  request: NextRequest,
+  context: { params: { id: string } }
+): Promise<NextResponse> {
   try {
     // Check authentication
     const session = await getServerSession(authOptions);
@@ -89,7 +89,7 @@ export async function DELETE(
     }
     
     const userId = session.user.id as string;
-    const instructionId = params.id;
+    const instructionId = context.params.id;
     
     // Check if instruction exists and belongs to user
     const existingInstruction = await prisma.instruction.findUnique({
