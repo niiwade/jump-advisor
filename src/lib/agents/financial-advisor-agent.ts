@@ -576,7 +576,7 @@ async function handleToolCall(userId: string, toolCall: { function: { name: stri
             success: false, 
             taskCreated: true,
             taskId: task.id,
-            message: `I couldn't send the email directly because ${!parsedArgs.to ? 'no recipient was specified' : 'the recipient email address is incomplete'}. I've created a task for you to review and complete the email draft.` 
+            message: `I couldn't send the email directly because ${!parsedArgs.to ? 'no recipient was specified' : 'the recipient email address is incomplete'}. I've created a task for you to review and complete the email draft.\n\n**Task Details:**\n- **ID:** ${task.id}\n- **Title:** ${task.title}\n- **Type:** EMAIL\n- **Status:** PENDING\n- **Content:** ${parsedArgs.body ? parsedArgs.body.substring(0, 100) + (parsedArgs.body.length > 100 ? '...' : '') : 'No content provided'}\n\nYou can find this task in your tasks panel where you can add the recipient details and send it when ready.` 
           };
         }
         
@@ -731,7 +731,9 @@ export async function processUserRequest(
         },
       });
       
-      return `I've created a task to draft an email to ${recipient || 'the recipient'} about ${subject}. You can find it in your tasks panel (Task ID: ${emailTask.id}) where you can add more details and send it when ready.`;
+      // Format task details for display in the chat
+      
+      return `I've created a task to draft an email to ${recipient || 'the recipient'} about ${subject}. \n\n**Task Details:**\n- **ID:** ${emailTask.id}\n- **Title:** ${emailTask.title}\n- **Type:** EMAIL\n- **Status:** PENDING\n\nYou can find this task in your tasks panel where you can add more details and send it when ready.`;
     }
 
     // Create system message with context

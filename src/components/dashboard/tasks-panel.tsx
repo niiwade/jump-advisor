@@ -4,9 +4,10 @@ import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, Clock, AlertCircle, RefreshCw, Trash2, CheckSquare } from "lucide-react";
+import { CheckCircle, Clock, AlertCircle, RefreshCw, Trash2, CheckSquare, Eye, Square } from "lucide-react";
 import { useToast } from "../ui/use-toast";
 import axios from "axios";
+import { TaskDetailsModal } from "./task-details-modal";
 
 type Task = {
   id: string;
@@ -25,6 +26,8 @@ export function TasksPanel() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [isTaskDetailsOpen, setIsTaskDetailsOpen] = useState(false);
   const { toast } = useToast();
 
   // Fetch all tasks for the user
@@ -180,6 +183,7 @@ export function TasksPanel() {
   }, []);
 
   return (
+    <>
     <Card className="w-full">
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
@@ -250,11 +254,25 @@ export function TasksPanel() {
             tasks.map((task) => (
               <div
                 key={task.id}
-                className={`border rounded-md p-4 space-y-2 ${selectedTasks.includes(task.id) ? "border-blue-500 bg-blue-50" : ""}`}
-                onClick={() => toggleTaskSelection(task.id)}
+                className={`border rounded-md p-4 space-y-2 ${selectedTasks.includes(task.id) ? "border-blue-500 bg-blue-50" : ""} cursor-pointer hover:bg-gray-50`}
+                onClick={() => {
+                  setSelectedTask(task);
+                  setIsTaskDetailsOpen(true);
+                }}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
+                    <div 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleTaskSelection(task.id);
+                      }}
+                      className="cursor-pointer p-1 hover:bg-gray-100 rounded"
+                    >
+                      {selectedTasks.includes(task.id) ? 
+                        <CheckSquare className="h-4 w-4 text-blue-500" /> : 
+                        <Square className="h-4 w-4 text-gray-400" />}
+                    </div>
                     {getStatusIcon(task.status)}
                     <h3 className="font-medium">{task.title}</h3>
                   </div>
@@ -274,6 +292,17 @@ export function TasksPanel() {
                         <CheckSquare className="h-4 w-4 text-green-500" />
                       </Button>
                     )}
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={(e: React.MouseEvent) => {
+                        e.stopPropagation();
+                        setSelectedTask(task);
+                        setIsTaskDetailsOpen(true);
+                      }}
+                    >
+                      <Eye className="h-4 w-4 text-blue-500" />
+                    </Button>
                     <Button 
                       variant="ghost" 
                       size="icon" 
@@ -308,10 +337,18 @@ export function TasksPanel() {
         Tasks are automatically created and managed by the AI assistant when processing your requests.
         {tasks.length > 0 && (
           <span className="ml-1 font-medium">
-            {selectedTasks.length > 0 ? `${selectedTasks.length} tasks selected` : ``}
+            {selectedTasks.length > 0 ? `${selectedTasks.length} tasks selected` : ""}
           </span>
         )}
       </CardFooter>
     </Card>
+    
+    <TaskDetailsModal
+      task={selectedTask}
+      isOpen={isTaskDetailsOpen}
+      onClose={() => setIsTaskDetailsOpen(false)}
+      onComplete={completeTask}
+    />
+    </>
   );
 }

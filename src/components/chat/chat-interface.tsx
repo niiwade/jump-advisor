@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useChat } from "ai/react";
-import { toast } from "react-hot-toast";
 import { Loader2 } from "lucide-react";
 
 interface ChatInterfaceProps {
@@ -17,6 +16,7 @@ interface ChatInterfaceProps {
 export default function ChatInterface({ user }: ChatInterfaceProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [processingType, setProcessingType] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   const { messages, input, handleInputChange, handleSubmit } = useChat({
@@ -33,14 +33,18 @@ export default function ChatInterface({ user }: ChatInterfaceProps) {
       if (response.ok) {
         const responseText = response.statusText || '';
         if (responseText.includes('task') || responseText.includes('Task')) {
-          toast.success('Task created successfully!');
+          setStatusMessage('Task created successfully!');
+          // Clear status message after 3 seconds
+          setTimeout(() => setStatusMessage(null), 3000);
         }
       }
     },
     onError: (error) => {
       setIsLoading(false);
       setProcessingType(null);
-      toast.error(`Error: ${error.message || 'Something went wrong'}`);
+      setStatusMessage(`Error: ${error.message || 'Something went wrong'}`);
+      // Clear error message after 5 seconds
+      setTimeout(() => setStatusMessage(null), 5000);
     }
   });
 
@@ -122,6 +126,11 @@ export default function ChatInterface({ user }: ChatInterfaceProps) {
         )}
       </div>
       <div className="border-t p-4">
+        {statusMessage && (
+          <div className={`mb-2 p-2 rounded text-sm ${statusMessage.includes('Error') ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
+            {statusMessage}
+          </div>
+        )}
         <form onSubmit={onSubmit} className="flex space-x-2">
           <input
             type="text"
