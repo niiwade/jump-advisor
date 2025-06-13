@@ -1,3 +1,4 @@
+// Gmail API integration for email handling and task creation
 import { google } from "googleapis";
 import { prisma } from "@/lib/db/prisma";
 import { generateEmbedding } from "@/lib/rag/embeddings";
@@ -247,24 +248,24 @@ export async function importEmails(userId: string, options?: ImportOptions) {
         // Store in database - use upsert to handle duplicate emails
         await prisma.emailDocument.upsert({
           where: {
-            messageId: message.id!
+            emailId: message.id!
           },
           update: {
             subject,
             content: body,
             sender: from,
-            recipient: to,
+            recipients: [to],
             sentAt: date,
             embedding,
             updatedAt: new Date()
           },
           create: {
-            messageId: message.id!,
+            emailId: message.id!,
             userId,
             subject,
             content: body,
             sender: from,
-            recipient: to,
+            recipients: [to],
             sentAt: date,
             embedding,
           },
@@ -321,7 +322,7 @@ export async function importEmails(userId: string, options?: ImportOptions) {
 
 // Interface for email webhook data
 interface EmailWebhookData {
-  messageId: string;
+  emailId: string;
   // Add other properties as needed based on the actual structure
 }
 
@@ -333,7 +334,7 @@ export async function handleNewEmail(userId: string, emailData: EmailWebhookData
     // Get email details
     const email = await gmail.users.messages.get({
       userId: "me",
-      id: emailData.messageId,
+      id: emailData.emailId,
     });
 
     // Extract email data
@@ -386,12 +387,12 @@ export async function handleNewEmail(userId: string, emailData: EmailWebhookData
     // Store in database
     await prisma.emailDocument.create({
       data: {
-        messageId: emailData.messageId,
-        userId,
+        emailId: emailData.emailId,
         subject,
+        userId,
         content: body,
         sender: from,
-        recipient: to,
+        recipients: [to],
         sentAt: date,
         embedding, // This would be stored using pgvector in a real implementation
       },
@@ -416,7 +417,7 @@ export async function handleNewEmail(userId: string, emailData: EmailWebhookData
 
     return {
       success: true,
-      emailId: emailData.messageId,
+      emailId: emailData.emailId,
     };
   } catch (error) {
     console.error("Error handling new email:", error);

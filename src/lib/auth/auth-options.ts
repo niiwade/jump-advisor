@@ -4,6 +4,12 @@ import { prisma } from "@/lib/db/prisma";
 import GoogleProvider from "next-auth/providers/google";
 import HubspotProvider from "@/lib/auth/hubspot-provider";
 
+function getRequiredEnv(key: string): string {
+  const value = process.env[key]
+  if (!value) throw new Error(`Missing required env var: ${key}`)
+  return value
+}
+
 declare module "next-auth" {
   interface Session {
     user: {
@@ -24,9 +30,9 @@ export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   providers: [
     GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID as string,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
-      allowDangerousEmailAccountLinking: true, // Fix for OAuthAccountNotLinked errors
+      clientId: getRequiredEnv("GOOGLE_CLIENT_ID"),
+      clientSecret: getRequiredEnv("GOOGLE_CLIENT_SECRET"),
+      allowDangerousEmailAccountLinking: true,
       authorization: {
         params: {
           scope: 'openid email profile https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly',
@@ -37,17 +43,17 @@ export const authOptions: NextAuthOptions = {
     }),
     // @ts-expect-error - HubSpot provider type is not fully compatible with NextAuth types
     HubspotProvider({
-      clientId: process.env.HUBSPOT_CLIENT_ID as string,
-      clientSecret: process.env.HUBSPOT_CLIENT_SECRET as string,
+      clientId: getRequiredEnv("HUBSPOT_CLIENT_ID"),
+      clientSecret: getRequiredEnv("HUBSPOT_CLIENT_SECRET"),
       callbackUrl: process.env.NEXTAUTH_URL ? `${process.env.NEXTAUTH_URL}/api/auth/callback/hubspot` : "http://localhost:3000/api/auth/callback/hubspot",
     }),
   ],
   callbacks: {
     async session({ session, token }) {
-      if (session.user) {
-        session.user.id = token.sub as string;
+      if (session.user && token.sub) {
+        session.user.id = token.sub
       }
-      return session;
+      return session
     },
     async signIn({ account }) {
       // Handle the unsupported refresh_token_expires_in field from Google OAuth

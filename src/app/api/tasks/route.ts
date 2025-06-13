@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/auth-options";
 import { prisma } from "@/lib/db/prisma";
 import { TaskStatus } from "@prisma/client";
+import { TaskMetadata } from "@/types/task";
 
 // GET all tasks for the current user
 export async function GET(request: NextRequest) {
@@ -38,39 +39,40 @@ export async function GET(request: NextRequest) {
     // since it's stored in metadata now, not as a direct field
     
     // Get all tasks for the user with optional steps
-    const tasks = await prisma.task.findMany({
-      where,
-      orderBy: {
-        updatedAt: "desc",
-      },
-      // Select only the fields that exist in the database
-      select: {
-        id: true,
-        userId: true,
-        title: true,
-        description: true,
-        status: true,
-        type: true,
-        metadata: true,
-        createdAt: true,
-        updatedAt: true,
-        completedAt: true,
-        // Exclude fields that don't exist in the database:
-        // - currentStep, totalSteps, waitingFor, waitingSince, resumeAfter, parentTaskId
-      },
-      // Handle steps separately with include instead of select
-      include: includeSteps ? { steps: true } : undefined,
-    });
-    
-    // Define a type for task metadata that includes our custom fields
-    interface TaskMetadata {
-      currentStep?: number;
-      totalSteps?: number;
-      parentTaskId?: string | null;
-      waitingFor?: string | null;
-      waitingSince?: string | null;
-      resumeAfter?: string | null;
-      [key: string]: unknown;
+    let tasks;
+    if (includeSteps) {
+      tasks = await prisma.task.findMany({
+        where,
+        orderBy: {
+          updatedAt: "desc",
+        },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          type: true,
+          status: true,
+          updatedAt: true,
+          metadata: true,
+          steps: true
+        }
+      });
+    } else {
+      tasks = await prisma.task.findMany({
+        where,
+        orderBy: {
+          updatedAt: "desc",
+        },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          type: true,
+          status: true,
+          updatedAt: true,
+          metadata: true
+        }
+      });
     }
     
     // Add default values and filter by parentTaskId if needed
@@ -83,16 +85,16 @@ export async function GET(request: NextRequest) {
       
       return {
         ...task,
-        // Get currentStep from metadata or default to 1
         currentStep: (task.metadata as TaskMetadata)?.currentStep || 1,
-        // Get totalSteps from steps length or from metadata or default to 1
         totalSteps: stepsLength || (task.metadata as TaskMetadata)?.totalSteps || 1,
-        // Get parentTaskId from metadata
         parentTaskId: (task.metadata as TaskMetadata)?.parentTaskId || null,
-        // Get waiting fields from metadata
         waitingFor: (task.metadata as TaskMetadata)?.waitingFor || null,
-        waitingSince: (task.metadata as TaskMetadata)?.waitingSince || null,
-        resumeAfter: (task.metadata as TaskMetadata)?.resumeAfter || null
+        waitingSince: (task.metadata as TaskMetadata)?.waitingSince 
+          ? new Date((task.metadata as TaskMetadata).waitingSince!)
+          : null,
+        resumeAfter: (task.metadata as TaskMetadata)?.resumeAfter
+          ? new Date((task.metadata as TaskMetadata).resumeAfter!)
+          : null
       };
     });
     
@@ -162,13 +164,18 @@ export async function POST(req: NextRequest) {
     }
     
     // Prepare metadata with all the fields that don't exist in the database
-    const enhancedMetadata = {
+    const enhancedMetadata: TaskMetadata = {
       ...(metadata || {}),
       currentStep: 1,
       totalSteps,
-      waitingFor,
-      waitingSince: waitingSince ? new Date(waitingSince) : waitingFor ? new Date() : null,
-      resumeAfter: resumeAfter ? new Date(resumeAfter) : null
+      ...(parentTaskId ? { parentTaskId } : {}),
+      ...(waitingFor ? { 
+        waitingFor,
+        waitingSince: new Date().toISOString() 
+      } : {}),
+      ...(resumeAfter ? { 
+        resumeAfter: (typeof resumeAfter === 'string' ? new Date(resumeAfter) : resumeAfter).toISOString()
+      } : {})
     };
     
     // Create new task
@@ -179,8 +186,7 @@ export async function POST(req: NextRequest) {
         description: description || "",
         type,
         status: initialStatus,
-        metadata: enhancedMetadata,
-        parentTaskId,
+        metadata: enhancedMetadata, 
         // Create steps if provided
         steps: steps.length > 0 ? {
           create: steps.map((step: { title: string; description?: string; metadata?: Record<string, unknown> }, index: number) => {
@@ -190,8 +196,8 @@ export async function POST(req: NextRequest) {
               // Only add waiting fields to the first step if needed
               ...(index === 0 ? {
                 waitingFor: waitingFor || null,
-                waitingSince: index === 0 && waitingFor ? (waitingSince ? new Date(waitingSince) : new Date()) : null,
-                resumeAfter: index === 0 && resumeAfter ? new Date(resumeAfter) : null
+                waitingSince: index === 0 && waitingFor ? (waitingSince ? new Date(waitingSince) : new Date()).toISOString() : null,
+                resumeAfter: index === 0 && resumeAfter ? new Date(resumeAfter).toISOString() : null
               } : {})
             };
             

@@ -3,11 +3,20 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/auth-options";
 import { prisma } from "@/lib/db/prisma";
 
+type RouteContext = {
+  params: Promise<{ id: string }> & {
+    then: (onfulfilled?: (value: { id: string }) => unknown) => Promise<unknown>;
+    catch: (onrejected?: (reason: unknown) => unknown) => Promise<unknown>;
+    finally: (onfinally?: () => void) => Promise<unknown>;
+    [Symbol.toStringTag]: string;
+  };
+};
+
 // PATCH update an instruction
 export async function PATCH(
   request: NextRequest,
-  context: { params: { id: string } }
-): Promise<NextResponse> {
+  { params }: RouteContext
+) {
   try {
     // Check authentication
     const session = await getServerSession(authOptions);
@@ -20,7 +29,7 @@ export async function PATCH(
     }
     
     const userId = session.user.id as string;
-    const instructionId = context.params.id;
+    const { id: instructionId } = await params;
     const { active } = await request.json();
     
     // Validate input
@@ -75,8 +84,8 @@ export async function PATCH(
 // DELETE an instruction
 export async function DELETE(
   request: NextRequest,
-  context: { params: { id: string } }
-): Promise<NextResponse> {
+  { params }: RouteContext
+) {
   try {
     // Check authentication
     const session = await getServerSession(authOptions);
@@ -89,7 +98,7 @@ export async function DELETE(
     }
     
     const userId = session.user.id as string;
-    const instructionId = context.params.id;
+    const { id: instructionId } = await params;
     
     // Check if instruction exists and belongs to user
     const existingInstruction = await prisma.instruction.findUnique({
