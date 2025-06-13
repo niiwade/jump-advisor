@@ -10,6 +10,10 @@ function getRequiredEnv(key: string): string {
   return value
 }
 
+function assertEnv(key: string): string {
+  return getRequiredEnv(key);
+}
+
 declare module "next-auth" {
   interface Session {
     user: {
@@ -42,8 +46,8 @@ export const authOptions: NextAuthOptions = {
       }
     }),
     HubSpot({
-      clientId: process.env.HUBSPOT_CLIENT_ID,
-      clientSecret: process.env.HUBSPOT_CLIENT_SECRET,
+      clientId: assertEnv("HUBSPOT_CLIENT_ID"),
+      clientSecret: assertEnv("HUBSPOT_CLIENT_SECRET"),
       authorization: {
         params: { scope: "oauth contacts" }
       }
