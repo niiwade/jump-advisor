@@ -20,6 +20,7 @@ model User {
   sessions            Session[]
   tasks               Task[]
   webhookSubscriptions WebhookSubscription[]
+  syncStates          SyncState[]
 }
 
 model Account {
@@ -99,15 +100,19 @@ model Instruction {
 model EmailDocument {
   id         String   @id @default(cuid())
   emailId    String   @unique
+  messageId  String?  @unique
   userId     String
   subject    String
   content    String
   sender     String
   recipients String[]
   sentAt     DateTime
+  processed  Boolean  @default(false)
   embedding  Json
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  syncState  SyncState? @relation(fields: [syncStateId], references: [id])
+  syncStateId String?
 }
 
 model HubspotContact {
@@ -169,6 +174,20 @@ model IngestionStatus {
   updatedAt DateTime            @updatedAt
 }
 
+model SyncState {
+  id           String         @id @default(cuid())
+  userId       String
+  service      String
+  lastSyncTime DateTime?
+  status       String        @default("IDLE")
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  user         User          @relation(fields: [userId], references: [id])
+  emailDocs    EmailDocument[]
+
+  @@unique([userId, service], name: "sync_state_user_service")
+}
+
 enum TaskStatus {
   PENDING
   IN_PROGRESS
@@ -202,8 +221,10 @@ enum IngestionStatusType {
 model WebhookSubscription {
   id         String   @id @default(cuid())
   userId     String
-  service    String   // e.g., "HUBSPOT", "GMAIL", etc.
-  externalId String   @unique // The ID provided by the external service
+  service    String
+  externalId String   @unique
+  channelId  String?
+  expiresAt  DateTime?
   active     Boolean  @default(true)
   metadata   Json?
   createdAt  DateTime @default(now())

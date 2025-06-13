@@ -88,34 +88,29 @@ async function setupGmailSubscription(
     
     // Initialize Gmail client
     const gmail = await getGmailClient(userId);
-    
-    // Generate a unique channel ID
-    const channelId = `gmail-${userId}-${Date.now()}`;
-    
+
     // Set up push notifications
     const response = await gmail.users.watch({
       userId: "me",
       requestBody: {
-        labelIds: ["INBOX"],
         topicName: process.env.GMAIL_PUBSUB_TOPIC,
-        labelFilterAction: "include",
-      },
+        labelIds: ["INBOX"]
+      }
     });
-    
-    // Calculate expiration date (7 days from now)
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
-    
-    // Store the subscription in the database
+
+    const resourceId = response.data.historyId;
+    if (!resourceId) throw new Error('Missing resourceId');
+
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days from now
+
+    // Store the subscription
     await prisma.webhookSubscription.create({
       data: {
         userId,
         service: "GMAIL",
-        channelId,
-        resourceId: response.data.historyId,
-        externalId: response.data.historyId,
+        externalId: resourceId,
         expiresAt,
-      },
+      }
     });
     
     console.log(`Created Gmail subscription for user ${userId}`);
@@ -156,7 +151,7 @@ async function setupCalendarSubscription(
     const calendar = await getCalendarClient(userId);
     
     // Generate a unique channel ID
-    const channelId = `calendar-${userId}-${Date.now()}`;
+    const channelId: string = `calendar-${userId}-${Date.now()}`;
     
     // Set up push notifications
     const response = await calendar.events.watch({
@@ -168,14 +163,15 @@ async function setupCalendarSubscription(
       },
     });
     
+    const resourceId = response.data.resourceId;
+    if (!resourceId) throw new Error('Missing resourceId');
+
     // Store the subscription in the database
     await prisma.webhookSubscription.create({
       data: {
         userId,
         service: "CALENDAR",
-        channelId,
-        resourceId: response.data.resourceId,
-        externalId: response.data.resourceId,
+        externalId: resourceId,
         expiresAt: new Date(Number(response.data.expiration)),
       },
     });
@@ -221,6 +217,9 @@ async function setupHubspotSubscription(
       active: true,
     });
     
+    const contactResourceId = contactSubscription.data?.id;
+    if (!contactResourceId) throw new Error('Missing resourceId');
+
     // Create a subscription for notes
     const noteSubscription = await hubspot.post("/webhooks/v3/app/subscriptions", {
       eventType: "note.creation",
@@ -228,23 +227,22 @@ async function setupHubspotSubscription(
       active: true,
     });
     
+    const noteResourceId = noteSubscription.data?.id;
+    if (!noteResourceId) throw new Error('Missing resourceId');
+
     // Store the subscriptions in the database
     await prisma.webhookSubscription.createMany({
       data: [
         {
           userId,
           service: "HUBSPOT",
-          channelId: "hubspot-contact-" + userId,
-          resourceId: "contact",
-          externalId: contactSubscription.data?.id || `contact-${Date.now()}`,
+          externalId: contactResourceId,
           expiresAt: null, // HubSpot subscriptions don't expire
         },
         {
           userId,
           service: "HUBSPOT",
-          channelId: "hubspot-note-" + userId,
-          resourceId: "note",
-          externalId: noteSubscription.data?.id || `note-${Date.now()}`,
+          externalId: noteResourceId,
           expiresAt: null, // HubSpot subscriptions don't expire
         },
       ],
@@ -263,26 +261,20 @@ async function setupHubspotSubscription(
  */
 export async function renewWebhookSubscriptions(): Promise<void> {
   try {
-    // Find subscriptions that expire in the next 24 hours
-    const expirationDate = new Date();
-    expirationDate.setHours(expirationDate.getHours() + 24);
-    
-    const expiringSubscriptions = await prisma.webhookSubscription.findMany({
+    // Find subscriptions that expire in the next 3 days
+    const renewSubscriptions = await prisma.webhookSubscription.findMany({
       where: {
-        expiresAt: {
-          lt: expirationDate,
-          not: null,
-        },
-      },
-      include: {
-        user: true,
-      },
+        expiresAt: { 
+          lt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+          gt: new Date() 
+        }
+      }
     });
     
-    console.log(`Found ${expiringSubscriptions.length} expiring webhook subscriptions`);
+    console.log(`Found ${renewSubscriptions.length} expiring webhook subscriptions`);
     
     // Renew each subscription
-    for (const subscription of expiringSubscriptions) {
+    for (const subscription of renewSubscriptions) {
       const accounts = await prisma.account.findMany({
         where: {
           userId: subscription.userId,

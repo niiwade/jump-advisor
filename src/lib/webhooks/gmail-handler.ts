@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db/prisma";
 import { getGmailClient } from "@/lib/api/gmail";
 import { generateEmbedding } from "@/lib/rag/search";
 import { processUserRequest } from "@/lib/agents/financial-advisor-agent";
+import type { gmail_v1 } from 'googleapis';
 
 /**
  * Process a new email notification from Gmail
@@ -44,7 +45,7 @@ export async function processNewEmail(
     
     if (!history.data.history || history.data.history.length === 0) {
       console.log("No new messages found in history");
-      await updateLastSyncHistoryId(userId, historyId);
+      await updateSyncState(userId);
       return;
     }
     
@@ -65,11 +66,16 @@ export async function processNewEmail(
     
     // Process each new message
     for (const messageId of messageIds) {
-      await processMessage(userId, gmail, messageId);
+      const message = await gmail.users.messages.get({
+        userId: "me",
+        id: messageId,
+        format: "full",
+      });
+      await processMessage(userId, message.data);
     }
     
     // Update the last sync history ID
-    await updateLastSyncHistoryId(userId, historyId);
+    await updateSyncState(userId);
     
     // Check for any instructions that need to be processed
     await processInstructions(userId);
@@ -84,70 +90,56 @@ export async function processNewEmail(
  * Process a single email message
  * 
  * @param userId The user ID
- * @param gmail The Gmail client
- * @param messageId The message ID
+ * @param message The Gmail message
  */
-import { gmail_v1 } from 'googleapis';
-
 async function processMessage(
   userId: string,
-  gmail: gmail_v1.Gmail,
-  messageId: string
+  message: gmail_v1.Schema$Message
 ): Promise<void> {
   try {
-    // Get the message
-    const message = await gmail.users.messages.get({
-      userId: "me",
-      id: messageId,
-      format: "full",
-    });
-    
-    // Extract email data
-    const headers = message.data.payload?.headers || [];
-    
-    // Use the correct Schema type from Gmail API
-    const subject = headers.find((h) => h.name === "Subject")?.value || "";
-    const from = headers.find((h) => h.name === "From")?.value || "";
-    const to = headers.find((h) => h.name === "To")?.value || "";
-    const date = headers.find((h) => h.name === "Date")?.value || "";
-    
-    // Extract email body
-    let content = "";
-    
-    if (message.data.payload?.parts) {
-      // Multipart message
-      for (const part of message.data.payload.parts) {
-        if (part.mimeType === "text/plain" && part.body?.data) {
-          content += Buffer.from(part.body.data, "base64").toString("utf-8");
-        }
+    if (!message.payload) {
+      // If payload is missing, fetch full message using the gmail client
+      const gmail = await getGmailClient(userId);
+      const fullMessage = await gmail.users.messages.get({
+        userId: 'me',
+        id: message.id!,
+        format: 'FULL'
+      });
+      message = fullMessage.data;
+      
+      if (!message.payload) {
+        throw new Error('Message has no payload after full fetch');
       }
-    } else if (message.data.payload?.body?.data) {
-      // Simple message
-      content = Buffer.from(message.data.payload.body.data, "base64").toString("utf-8");
     }
-    
-    // Generate embedding for the email content
-    const combinedText = `Subject: ${subject}\nFrom: ${from}\n\n${content}`;
-    const embedding = await generateEmbedding(combinedText);
-    
+
+    // Extract message data with proper types
+    const subjectHeader = message.payload.headers?.find((h: gmail_v1.Schema$MessagePartHeader) => h.name === 'Subject');
+    const fromHeader = message.payload.headers?.find((h: gmail_v1.Schema$MessagePartHeader) => h.name === 'From');
+    const toHeader = message.payload.headers?.find((h: gmail_v1.Schema$MessagePartHeader) => h.name === 'To');
+
+    const subject = subjectHeader?.value || '';
+    const from = fromHeader?.value || '';
+    const to = toHeader?.value?.split(',') || [];
+    const content = message.snippet || '';
+    const date = message.internalDate ? new Date(parseInt(message.internalDate)) : new Date();
+
     // Store the email in the database
-    const email = await prisma.emailDocument.create({
+    await prisma.emailDocument.create({
       data: {
+        emailId: message.id || '',
+        messageId: message.id || '',
         userId,
-        messageId,
         subject,
-        sender: from,
-        recipient: to,
         content,
-        sentAt: new Date(date),
-        embedding,
-      },
+        sender: from,
+        recipients: to,
+        sentAt: date,
+        embedding: await generateEmbedding(`${subject} ${content}`),
+      }
     });
-    
-    console.log(`Stored email: ${email.id}`);
-    
+
   } catch (error) {
-    console.error(`Error processing message ${messageId}:`, error);
+    console.error(`Error processing message ${message.id}:`, error);
     throw error;
   }
 }
@@ -159,42 +151,41 @@ async function processMessage(
  * @returns The last sync history ID
  */
 async function getLastSyncHistoryId(userId: string): Promise<string> {
-  const syncState = await prisma.syncState.findUnique({
+  const existingSyncState = await prisma.syncState.findUnique({
     where: {
-      userId_service: {
+      sync_state_user_service: {
         userId,
-        service: "GMAIL",
-      },
-    },
+        service: 'gmail'
+      }
+    }
   });
   
-  return syncState?.lastSyncToken || "1";
+  return existingSyncState?.lastSyncTime?.getTime().toString() || '1';
 }
 
 /**
- * Update the last sync history ID for a user
+ * Update the sync state for a user
  * 
  * @param userId The user ID
- * @param historyId The new history ID
  */
-async function updateLastSyncHistoryId(userId: string, historyId: string): Promise<void> {
+async function updateSyncState(userId: string): Promise<void> {
   await prisma.syncState.upsert({
     where: {
-      userId_service: {
+      sync_state_user_service: {
         userId,
-        service: "GMAIL",
-      },
-    },
-    update: {
-      lastSyncToken: historyId,
-      lastSyncAt: new Date(),
+        service: 'gmail'
+      }
     },
     create: {
       userId,
-      service: "GMAIL",
-      lastSyncToken: historyId,
-      lastSyncAt: new Date(),
+      service: 'gmail',
+      lastSyncTime: new Date(),
+      status: 'SYNCING'
     },
+    update: {
+      lastSyncTime: new Date(),
+      status: 'SYNCING'
+    }
   });
 }
 
@@ -209,7 +200,6 @@ async function processInstructions(userId: string): Promise<void> {
     where: {
       userId,
       active: true,
-      // Remove the type field if it's not part of InstructionWhereInput
     },
   });
   
@@ -217,8 +207,8 @@ async function processInstructions(userId: string): Promise<void> {
     return;
   }
   
-  // Get the most recent emails
-  const recentEmails = await prisma.emailDocument.findMany({
+  // Get the most recent unprocessed emails
+  const unprocessedEmails = await prisma.emailDocument.findMany({
     where: {
       userId,
       processed: false,
@@ -230,7 +220,7 @@ async function processInstructions(userId: string): Promise<void> {
   });
   
   // Process each email against the instructions
-  for (const email of recentEmails) {
+  for (const email of unprocessedEmails) {
     for (const instruction of instructions) {
       try {
         // Use the agent to process the instruction
@@ -254,7 +244,7 @@ async function processInstructions(userId: string): Promise<void> {
               userId,
               title: `Process email: ${email.subject}`,
               description: response,
-              type: "EMAIL", // Using a valid TaskType enum value
+              type: "EMAIL",
               status: "PENDING",
               metadata: {
                 emailId: email.id,

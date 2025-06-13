@@ -28,11 +28,13 @@ export function initializeServer(): void {
     initializeAgents();
     
     // Start the task manager service for handling multi-step tasks
-    TaskManager.start();
+    TaskManager.startTaskResumptionScheduler();
     
+    // Log server initialization status
     console.log('Server initialization complete');
   } catch (error) {
     console.error('Error during server initialization:', error);
+    throw error;
   }
   
   initialized = true;
@@ -44,6 +46,5 @@ export function initializeServer(): void {
 export function getServerStatus() {
   return {
     isInitialized: initialized,
-    taskManagerStatus: TaskManager.getStatus(),
   };
 }
