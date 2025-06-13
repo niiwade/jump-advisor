@@ -14,8 +14,11 @@
 /coverage
 
 # next.js
- /.next/
+/.next/
 /out/
+
+# webpack cache
+.next/cache/webpack/
 
 # production
 /build
