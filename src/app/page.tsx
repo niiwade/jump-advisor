@@ -6,7 +6,7 @@ export default function Home() {
       <main className="flex flex-col gap-[32px] row-start-2 items-center w-full">
 
         <div className="text-6xl font-semibold tracking-tight text-center w-full"> 
-        Jump Advisor Challenge
+        Jump Advisor Final Challenge
         </div>
  
 
