@@ -2,7 +2,7 @@ import { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/db/prisma";
 import GoogleProvider from "next-auth/providers/google";
-import HubspotProvider from "@/lib/auth/hubspot-provider";
+import HubSpot from "next-auth/providers/hubspot";
 
 function getRequiredEnv(key: string): string {
   const value = process.env[key]
@@ -41,11 +41,12 @@ export const authOptions: NextAuthOptions = {
         }
       }
     }),
-    // @ts-expect-error - HubSpot provider type is not fully compatible with NextAuth types
-    HubspotProvider({
-      clientId: getRequiredEnv("HUBSPOT_CLIENT_ID"),
-      clientSecret: getRequiredEnv("HUBSPOT_CLIENT_SECRET"),
-      callbackUrl: process.env.NEXTAUTH_URL ? `${process.env.NEXTAUTH_URL}/api/auth/callback/hubspot` : "http://localhost:3000/api/auth/callback/hubspot",
+    HubSpot({
+      clientId: process.env.HUBSPOT_CLIENT_ID,
+      clientSecret: process.env.HUBSPOT_CLIENT_SECRET,
+      authorization: {
+        params: { scope: "oauth contacts" }
+      }
     }),
   ],
   callbacks: {
