@@ -3,11 +3,13 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/auth-options";
 import { prisma } from "@/lib/db/prisma";
 import { TaskStatus, Prisma } from "@prisma/client";
+import type { TaskMetadata } from "@/types/task";
+import type { RouteContext } from "@/types/next";
 
 // GET a specific step by ID
 export async function GET(
   request: NextRequest,
-  { params }: { params: { taskId: string; stepId: string } }
+  { params }: RouteContext<{ taskId: string; stepId: string }>
 ) {
   try {
     // Check authentication
@@ -21,7 +23,7 @@ export async function GET(
     }
     
     const userId = session.user.id as string;
-    const { taskId, stepId } = params;
+    const { taskId, stepId } = await params;
     
     // Verify the task exists and belongs to the user
     const task = await prisma.task.findUnique({
@@ -66,7 +68,7 @@ export async function GET(
 // PATCH to update a specific step
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { taskId: string; stepId: string } }
+  { params }: RouteContext<{ taskId: string; stepId: string }>
 ) {
   try {
     // Check authentication
@@ -80,7 +82,7 @@ export async function PATCH(
     }
     
     const userId = session.user.id as string;
-    const { taskId, stepId } = params;
+    const { taskId, stepId } = await params;
     
     // Verify the task exists and belongs to the user
     const task = await prisma.task.findUnique({
@@ -106,57 +108,45 @@ export async function PATCH(
       metadata,
       waitingFor,
       waitingSince,
-      resumeAfter,
-      completedAt
+      resumeAfter
     } = updateData;
     
     // Prepare update data using Prisma's TaskStepUpdateInput type
-    const stepUpdateData: Prisma.TaskStepUpdateInput = {};
-    
-    if (title !== undefined) stepUpdateData.title = title;
-    if (description !== undefined) stepUpdateData.description = description;
-    if (status !== undefined) stepUpdateData.status = status;
-    if (metadata !== undefined) stepUpdateData.metadata = metadata;
-    if (waitingFor !== undefined) stepUpdateData.waitingFor = waitingFor;
-    
-    // Handle date fields
-    if (waitingSince !== undefined) {
-      stepUpdateData.waitingSince = waitingSince ? new Date(waitingSince) : null;
-    }
-    
-    if (resumeAfter !== undefined) {
-      stepUpdateData.resumeAfter = resumeAfter ? new Date(resumeAfter) : null;
-    }
-    
-    if (completedAt !== undefined) {
-      stepUpdateData.completedAt = completedAt ? new Date(completedAt) : null;
-    }
-    
-    // If status is changing to COMPLETED, set completedAt if not provided
-    if (status === TaskStatus.COMPLETED && completedAt === undefined) {
-      stepUpdateData.completedAt = new Date();
-    }
-    
-    // If status is changing to WAITING_FOR_RESPONSE, set waitingSince if not provided
-    if (status === TaskStatus.WAITING_FOR_RESPONSE && waitingSince === undefined && waitingFor) {
-      stepUpdateData.waitingSince = new Date();
-    }
-    
-    // Update the step
+    const stepUpdateData: Prisma.TaskStepUpdateInput = {
+      ...(title !== undefined && { title }),
+      ...(description !== undefined && { description }),
+      metadata: {
+        ...(metadata as object || {}),
+        status,
+        ...(waitingFor !== undefined && { waitingFor }),
+        ...(waitingSince !== undefined && { waitingSince }),
+        ...(resumeAfter !== undefined && { resumeAfter }),
+        ...(status === TaskStatus.COMPLETED && { completedAt: new Date().toISOString() })
+      }
+    };
+
     const updatedStep = await prisma.taskStep.update({
-      where: {
-        id: stepId,
-      },
-      data: stepUpdateData,
-    });
-    
+      where: { id: stepId },
+      data: stepUpdateData
+    }) as {
+      id: string;
+      status: TaskStatus;
+      stepNumber: number;
+      metadata: Prisma.JsonValue;
+      taskId: string;
+      createdAt: Date;
+      updatedAt: Date;
+    };
+
     // If this step is completed and it's the current step, advance the task to the next step
-    if (status === TaskStatus.COMPLETED && task.currentStep === updatedStep.stepNumber) {
+    if (status === TaskStatus.COMPLETED && (task.metadata as {currentStep: number})?.currentStep === updatedStep.stepNumber) {
       // Check if there's a next step
       const nextStep = await prisma.taskStep.findFirst({
         where: {
-          taskId,
-          stepNumber: updatedStep.stepNumber + 1,
+          AND: [
+            { taskId },
+            { metadata: { path: ['stepNumber'], equals: updatedStep.stepNumber + 1 } }
+          ]
         },
       });
       
@@ -167,11 +157,13 @@ export async function PATCH(
             id: taskId,
           },
           data: {
-            currentStep: updatedStep.stepNumber + 1,
-            status: nextStep.status, // Inherit the status of the next step
-            waitingFor: nextStep.waitingFor,
-            waitingSince: nextStep.waitingSince,
-            resumeAfter: nextStep.resumeAfter,
+            metadata: {
+              currentStep: updatedStep.stepNumber + 1,
+              status: (nextStep.metadata as TaskMetadata)?.status || TaskStatus.PENDING,
+              waitingFor: (nextStep.metadata as TaskMetadata)?.waitingFor || null,
+              waitingSince: (nextStep.metadata as TaskMetadata)?.waitingSince || null,
+              resumeAfter: (nextStep.metadata as TaskMetadata)?.resumeAfter || null,
+            },
           },
         });
       } else {
@@ -181,11 +173,12 @@ export async function PATCH(
             id: taskId,
           },
           data: {
-            status: TaskStatus.COMPLETED,
-            completedAt: new Date(),
-            waitingFor: null,
-            waitingSince: null,
-            resumeAfter: null,
+            metadata: {
+              status: TaskStatus.COMPLETED,
+              waitingFor: null,
+              waitingSince: null,
+              resumeAfter: null,
+            },
           },
         });
       }
@@ -204,7 +197,7 @@ export async function PATCH(
 // DELETE a specific step
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { taskId: string; stepId: string } }
+  { params }: RouteContext<{ taskId: string; stepId: string }>
 ) {
   try {
     // Check authentication
@@ -218,7 +211,7 @@ export async function DELETE(
     }
     
     const userId = session.user.id as string;
-    const { taskId, stepId } = params;
+    const { taskId, stepId } = await params;
     
     // Verify the task exists and belongs to the user
     const task = await prisma.task.findUnique({
@@ -241,7 +234,15 @@ export async function DELETE(
         id: stepId,
         taskId,
       },
-    });
+    }) as {
+      id: string;
+      status: TaskStatus;
+      stepNumber: number;
+      metadata: Prisma.JsonValue;
+      taskId: string;
+      createdAt: Date;
+      updatedAt: Date;
+    };
     
     if (!stepToDelete) {
       return NextResponse.json(
@@ -258,18 +259,20 @@ export async function DELETE(
     });
     
     // Reorder remaining steps if necessary
-    if (stepToDelete.stepNumber < task.totalSteps) {
+    const taskTotalSteps = (task.metadata as {totalSteps?: number})?.totalSteps;
+    if (taskTotalSteps && stepToDelete.stepNumber < taskTotalSteps) {
       // Get all steps with higher step numbers
       const stepsToUpdate = await prisma.taskStep.findMany({
         where: {
           taskId,
-          stepNumber: {
-            gt: stepToDelete.stepNumber,
-          },
+          metadata: {
+            path: ['stepNumber'],
+            gt: stepToDelete.stepNumber
+          }
         },
         orderBy: {
-          stepNumber: "asc",
-        },
+          createdAt: 'asc'
+        }
       });
       
       // Update step numbers
@@ -279,7 +282,9 @@ export async function DELETE(
             id: step.id,
           },
           data: {
-            stepNumber: step.stepNumber - 1,
+            metadata: {
+              stepNumber: (step.metadata as {stepNumber: number})?.stepNumber - 1
+            }
           },
         });
       }
@@ -291,14 +296,19 @@ export async function DELETE(
         id: taskId,
       },
       data: {
-        totalSteps: task.totalSteps - 1,
-        // If the current step was deleted or was after the deleted step, adjust it
-        currentStep: task.currentStep > stepToDelete.stepNumber 
-          ? task.currentStep - 1 
-          : task.currentStep === stepToDelete.stepNumber 
-            ? Math.min(stepToDelete.stepNumber, task.totalSteps - 1) 
-            : task.currentStep,
-      },
+        metadata: {
+          ...(task.metadata as {totalSteps?: number, currentStep?: number}),
+          totalSteps: (task.metadata as {totalSteps?: number})?.totalSteps ? 
+            (task.metadata as {totalSteps: number}).totalSteps - 1 : 0,
+          currentStep: 
+            (task.metadata as {currentStep?: number})?.currentStep === undefined ? 1 :
+            (task.metadata as {currentStep: number}).currentStep > stepToDelete.stepNumber ? 
+              (task.metadata as {currentStep: number}).currentStep - 1 :
+            (task.metadata as {currentStep: number}).currentStep === stepToDelete.stepNumber ?
+              Math.min(stepToDelete.stepNumber, ((task.metadata as {totalSteps?: number})?.totalSteps || 1) - 1) :
+              (task.metadata as {currentStep: number}).currentStep
+        }
+      }
     });
     
     return NextResponse.json({ success: true });

@@ -5,6 +5,7 @@ import { handleNewCalendarEvent } from "@/lib/api/calendar";
 import { handleNewHubspotContact } from "@/lib/api/hubspot";
 import { processUserRequest } from "@/lib/agents/financial-advisor-agent";
 import { Message } from "ai";
+import { EmailWebhookData } from "@/types/email";
 
 // Main webhook handler
 export async function POST(req: NextRequest) {
@@ -60,13 +61,6 @@ export async function POST(req: NextRequest) {
 }
 
 // Define webhook data types
-interface EmailWebhookData {
-  messageId: string;
-  sender?: string;
-  subject?: string;
-  content?: string;
-}
-
 interface CalendarWebhookData {
   eventId: string;
   title?: string;
@@ -88,6 +82,11 @@ interface HubspotWebhookData {
 
 // Gmail webhook handler
 async function handleGmailWebhook(userId: string, data: EmailWebhookData) {
+  // Validate required fields
+  if (!data.emailId) {
+    throw new Error("emailId is required");
+  }
+  
   // Process new email
   const result = await handleNewEmail(userId, data);
 
@@ -102,8 +101,8 @@ async function handleGmailWebhook(userId: string, data: EmailWebhookData) {
   // If there are active instructions, process them with the agent
   if (instructions.length > 0) {
     // Create a system message for the agent
-    const systemMessage = `New email received: 
-    From: ${data.sender}
+    const systemMessage = `New email received:
+    From: ${data.from}
     Subject: ${data.subject}
     
     Based on the user's instructions, determine if any action is needed.`;
@@ -130,7 +129,10 @@ async function handleGmailWebhook(userId: string, data: EmailWebhookData) {
     const agentResponse = await processUserRequest(
       userId,
       systemMessage,
-      formattedHistory
+      formattedHistory.map(msg => ({
+        ...msg,
+        id: `msg-${Math.random().toString(36).substring(2, 11)}` // Add required id field
+      })) as Message[]
     );
 
     // Save agent response as a system message

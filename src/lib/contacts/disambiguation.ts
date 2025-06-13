@@ -147,9 +147,9 @@ export async function createDisambiguationTask(
         description: `Please select the correct contact for "${contactReference}"`,
         type: TaskType.GENERAL, // Using a valid TaskType enum value
         status: TaskStatus.WAITING_FOR_RESPONSE,
-        waitingFor: "Contact selection",
-        waitingSince: new Date(),
         metadata: {
+          waitingFor: "Contact selection",
+          waitingSince: new Date().toISOString(),
           contactReference,
           potentialContacts: potentialContacts.map(contact => ({
             id: contact.id,
@@ -258,10 +258,10 @@ export async function resolveDisambiguation(
       data: {
         status: TaskStatus.COMPLETED,
         completedAt: new Date(),
-        waitingFor: null,
-        waitingSince: null,
         metadata: {
           ...metadata,
+          waitingFor: null,
+          waitingSince: null,
           selectedContact: {
             id: selectedContact.id,
             email: selectedContact.email,

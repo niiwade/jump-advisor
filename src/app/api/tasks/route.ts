@@ -77,24 +77,15 @@ export async function GET(request: NextRequest) {
     
     // Add default values and filter by parentTaskId if needed
     let tasksWithMissingFields = tasks.map(task => {
-      // Handle the task structure based on whether steps were included
-      // Define a type that includes the potential steps property
-      type TaskWithSteps = typeof task & { steps?: Array<{ stepNumber: number }> };      
-      const taskWithSteps = task as TaskWithSteps;
-      const stepsLength = taskWithSteps.steps ? taskWithSteps.steps.length : 0;
-      
+      const metadata = task.metadata as TaskMetadata;
       return {
         ...task,
-        currentStep: (task.metadata as TaskMetadata)?.currentStep || 1,
-        totalSteps: stepsLength || (task.metadata as TaskMetadata)?.totalSteps || 1,
-        parentTaskId: (task.metadata as TaskMetadata)?.parentTaskId || null,
-        waitingFor: (task.metadata as TaskMetadata)?.waitingFor || null,
-        waitingSince: (task.metadata as TaskMetadata)?.waitingSince 
-          ? new Date((task.metadata as TaskMetadata).waitingSince!)
-          : null,
-        resumeAfter: (task.metadata as TaskMetadata)?.resumeAfter
-          ? new Date((task.metadata as TaskMetadata).resumeAfter!)
-          : null
+        currentStep: metadata?.currentStep || 1,
+        totalSteps: (task as {steps?: unknown[]})?.steps?.length || metadata?.totalSteps || 1,
+        parentTaskId: metadata?.parentTaskId || null,
+        waitingFor: metadata?.waitingFor || null,
+        waitingSince: metadata?.waitingSince ? new Date(metadata.waitingSince) : null,
+        resumeAfter: metadata?.resumeAfter ? new Date(metadata.resumeAfter) : null
       };
     });
     

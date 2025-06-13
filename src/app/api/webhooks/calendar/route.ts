@@ -33,12 +33,12 @@ export async function POST(req: Request) {
     // Find the user associated with this channel
     const subscription = await prisma.webhookSubscription.findFirst({
       where: {
-        channelId: channelId,
+        externalId: channelId,  // Correct field from schema
         service: "CALENDAR"
       },
       include: {
-        user: true,
-      },
+        user: true
+      }
     });
     
     if (!subscription || !subscription.user) {

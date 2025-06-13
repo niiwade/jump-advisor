@@ -1,26 +1,27 @@
-import type { JsonValue } from "@prisma/client/runtime/library";
+import { Task, TaskStep } from '@prisma/client';
+import { JsonValue } from '@prisma/client/runtime/library';
 
 export interface TaskMetadata {
   currentStep?: number;
-  totalSteps?: number;
-  parentTaskId?: string;
   waitingFor?: string;
-  waitingSince?: string; // Store dates as ISO strings
-  resumeAfter?: string; // Store dates as ISO strings
+  waitingSince?: string;
+  resumeAfter?: string;
   [key: string]: JsonValue | undefined;
 }
 
-export type TaskWithMetadata = {
-  id: string;
-  title: string;
-  description: string;
-  status: string;
+export interface TaskStepMetadata {
+  waitingFor?: string;
+  waitingSince?: string;
+  [key: string]: JsonValue | undefined;
+}
+
+export interface TaskStepWithMetadata extends TaskStep {
+  stepNumber: number;
+  metadata: TaskStepMetadata;
+}
+
+export interface TaskWithSteps extends Task {
+  steps: TaskStepWithMetadata[];
+  currentStep: number;
   metadata: TaskMetadata;
-  steps?: Array<{
-    stepNumber: number;
-    title: string;
-    description?: string;
-    status: string;
-    metadata: TaskMetadata;
-  }>;
-};
+}

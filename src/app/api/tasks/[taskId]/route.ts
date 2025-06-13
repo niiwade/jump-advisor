@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { RouteContext } from "@/types/next";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/auth-options";
 import { prisma } from "@/lib/db/prisma";
-import { TaskStatus, Prisma } from "@prisma/client";
+import type { TaskMetadata } from "@/types/task";
 
 // GET a specific task by ID
 export async function GET(
   request: NextRequest,
-  { params }: { params: { taskId: string } }
+  { params }: RouteContext<{ taskId: string }>
 ) {
   try {
     // Check authentication
@@ -21,7 +22,7 @@ export async function GET(
     }
     
     const userId = session.user.id as string;
-    const { taskId } = params;
+    const { taskId } = await params;
     
     // Get the task with steps
     const task = await prisma.task.findUnique({
@@ -30,19 +31,29 @@ export async function GET(
         userId, // Ensure the task belongs to the user
       },
       include: {
-        steps: true,
-        subTasks: true,
+        steps: true
       },
     });
-    
+
     if (!task) {
       return NextResponse.json(
         { error: "Task not found" },
         { status: 404 }
       );
     }
-    
-    return NextResponse.json(task);
+
+    // Get subtasks via metadata relationship if needed
+    const subTasks = await prisma.task.findMany({
+      where: { 
+        userId,
+        metadata: {
+          path: ['parentTaskId'],
+          equals: taskId
+        }
+      }
+    });
+
+    return NextResponse.json({ task, subTasks });
   } catch (error) {
     console.error("Error fetching task:", error);
     return NextResponse.json(
@@ -55,7 +66,7 @@ export async function GET(
 // PATCH to update a task
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { taskId: string } }
+  { params }: RouteContext<{ taskId: string }>
 ) {
   try {
     // Check authentication
@@ -69,7 +80,7 @@ export async function PATCH(
     }
     
     const userId = session.user.id as string;
-    const { taskId } = params;
+    const { taskId } = await params;
     
     // Get the update data
     const updateData = await request.json();
@@ -100,49 +111,32 @@ export async function PATCH(
       );
     }
     
-    // Prepare update data using Prisma's TaskUpdateInput type
-    const taskUpdateData: Prisma.TaskUpdateInput = {};
-    
-    if (title !== undefined) taskUpdateData.title = title;
-    if (description !== undefined) taskUpdateData.description = description;
-    if (status !== undefined) taskUpdateData.status = status;
-    if (currentStep !== undefined) taskUpdateData.currentStep = currentStep;
-    if (waitingFor !== undefined) taskUpdateData.waitingFor = waitingFor;
-    if (metadata !== undefined) taskUpdateData.metadata = metadata;
-    
-    // Handle date fields
-    if (waitingSince !== undefined) {
-      taskUpdateData.waitingSince = waitingSince ? new Date(waitingSince) : null;
-    }
-    
-    if (resumeAfter !== undefined) {
-      taskUpdateData.resumeAfter = resumeAfter ? new Date(resumeAfter) : null;
-    }
-    
-    if (completedAt !== undefined) {
-      taskUpdateData.completedAt = completedAt ? new Date(completedAt) : null;
-    }
-    
-    // If status is changing to COMPLETED or FAILED, set completedAt if not provided
-    if (status === TaskStatus.COMPLETED || status === TaskStatus.FAILED) {
-      // Use type assertion with a more specific type
-      (taskUpdateData as Prisma.TaskUpdateInput & { completedAt: Date }).completedAt = new Date();
-    }
-    
-    // If status is changing to WAITING_FOR_RESPONSE, set waitingSince if not provided
-    if (status === TaskStatus.WAITING_FOR_RESPONSE && waitingSince === undefined && waitingFor) {
-      taskUpdateData.waitingSince = new Date();
-    }
-    
     // Update the task
     const updatedTask = await prisma.task.update({
       where: {
         id: taskId,
+        userId,
       },
-      data: taskUpdateData,
+      data: {
+        ...(title && { title }),
+        ...(description !== undefined && { description }),
+        ...(status && { status }),
+        ...(completedAt && { completedAt }),
+        metadata: {
+          ...(existingTask.metadata as TaskMetadata),
+          ...(currentStep !== undefined && { currentStep }),
+          ...(waitingFor !== undefined && { 
+            waitingFor,
+            ...(waitingFor ? { waitingSince: new Date().toISOString() } : {})
+          }),
+          ...(waitingSince !== undefined && { waitingSince }),
+          ...(resumeAfter !== undefined && { resumeAfter }),
+          ...(metadata && metadata)
+        }
+      },
       include: {
-        steps: true,
-      },
+        steps: true
+      }
     });
     
     return NextResponse.json(updatedTask);
@@ -158,7 +152,7 @@ export async function PATCH(
 // DELETE a task
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { taskId: string } }
+  { params }: RouteContext<{ taskId: string }>
 ) {
   try {
     // Check authentication
@@ -172,7 +166,7 @@ export async function DELETE(
     }
     
     const userId = session.user.id as string;
-    const { taskId } = params;
+    const { taskId } = await params;
     
     // Verify the task exists and belongs to the user
     const existingTask = await prisma.task.findUnique({

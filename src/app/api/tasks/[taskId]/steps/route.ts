@@ -3,11 +3,14 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/auth-options";
 import { prisma } from "@/lib/db/prisma";
 import { TaskStatus } from "@prisma/client";
+import { Prisma } from '@prisma/client';
+import type { RouteContext } from "@/types/next";
+import { TaskStepWithMetadata, TaskStepMetadata } from "@/types/task";
 
 // GET all steps for a specific task
 export async function GET(
   request: NextRequest,
-  { params }: { params: { taskId: string } }
+  { params }: RouteContext<{ taskId: string }>
 ) {
   try {
     // Check authentication
@@ -21,7 +24,7 @@ export async function GET(
     }
     
     const userId = session.user.id as string;
-    const { taskId } = params;
+    const { taskId } = await params;
     
     // Verify the task exists and belongs to the user
     const task = await prisma.task.findUnique({
@@ -44,11 +47,18 @@ export async function GET(
         taskId,
       },
       orderBy: {
-        stepNumber: "asc",
-      },
-    });
+        createdAt: 'asc'
+      }
+    }) as TaskStepWithMetadata[];
     
-    return NextResponse.json({ steps });
+    // Add step numbers and typed metadata
+    const stepsWithNumbers = steps.map((step, index) => ({
+      ...step,
+      stepNumber: index + 1,
+      metadata: step.metadata as TaskStepMetadata
+    }));
+    
+    return NextResponse.json({ steps: stepsWithNumbers });
   } catch (error) {
     console.error("Error fetching task steps:", error);
     return NextResponse.json(
@@ -61,7 +71,7 @@ export async function GET(
 // POST to add a new step to a task
 export async function POST(
   request: NextRequest,
-  { params }: { params: { taskId: string } }
+  { params }: RouteContext<{ taskId: string }>
 ) {
   try {
     // Check authentication
@@ -75,7 +85,7 @@ export async function POST(
     }
     
     const userId = session.user.id as string;
-    const { taskId } = params;
+    const { taskId } = await params;
     
     // Get the step data
     const { 
@@ -111,41 +121,41 @@ export async function POST(
       );
     }
     
-    // Get the current highest step number
-    const highestStep = await prisma.taskStep.findFirst({
-      where: {
-        taskId,
-      },
-      orderBy: {
-        stepNumber: "desc",
-      },
-    });
-    
-    const nextStepNumber = highestStep ? highestStep.stepNumber + 1 : 1;
-    
     // Create the new step
     const newStep = await prisma.taskStep.create({
       data: {
-        taskId,
-        stepNumber: nextStepNumber,
         title,
-        description: description || "",
+        description,
         status,
-        metadata: metadata || {},
-        waitingFor,
-        waitingSince: waitingSince ? new Date(waitingSince) : waitingFor ? new Date() : null,
-        resumeAfter: resumeAfter ? new Date(resumeAfter) : null,
-      },
-    });
+        taskId,
+        metadata: {
+          stepNumber: ((task.metadata as {totalSteps?: number})?.totalSteps || 0) + 1,
+          ...(metadata || {})
+        },
+        ...(waitingFor && { waitingFor }),
+        ...(waitingSince && { waitingSince }),
+        ...(resumeAfter && { resumeAfter })
+      }
+    }) as {
+      id: string;
+      title: string;
+      description: string | null;
+      status: TaskStatus;
+      metadata: Prisma.JsonValue;
+      taskId: string;
+      createdAt: Date;
+      updatedAt: Date;
+    };
     
-    // Update the task's total steps
+    // Update task's totalSteps in metadata
     await prisma.task.update({
-      where: {
-        id: taskId,
-      },
+      where: { id: taskId },
       data: {
-        totalSteps: nextStepNumber,
-      },
+        metadata: {
+          ...(task.metadata as {totalSteps?: number}),
+          totalSteps: ((task.metadata as {totalSteps?: number})?.totalSteps || 0) + 1
+        }
+      }
     });
     
     return NextResponse.json(newStep, { status: 201 });

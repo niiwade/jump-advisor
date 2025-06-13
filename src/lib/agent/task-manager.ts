@@ -1,329 +1,157 @@
-import { prisma } from "@/lib/db/prisma";
-import { TaskStatus, Task } from "@prisma/client";
-import { JsonValue } from "@prisma/client/runtime/library";
-
-type JsonObject = { [Key in string]?: JsonValue };
-
-// Define interfaces for task and step with metadata
-interface TaskWithSteps extends Omit<Task, 'metadata' | 'currentStep'> {
-  steps?: TaskStepWithMetadata[];
-  metadata?: JsonValue;
-  title: string;
-  currentStep: number;
-}
-
-interface TaskStepWithMetadata {
-  id: string;
-  stepNumber: number;
-  status?: string;
-  metadata?: JsonValue;
-  waitingFor?: string | null;
-  waitingSince?: Date | null;
-  resumeAfter?: Date | null;
-}
+import { prisma } from '@/lib/db/prisma';
+import { TaskMetadata, TaskStepMetadata, TaskWithSteps } from '../../types/task';
 
 // Interval in milliseconds for checking waiting tasks (default: 1 minute)
 const CHECK_INTERVAL = 60 * 1000;
 
-// In-memory tracking of the task manager state
-let isRunning = false;
-let lastCheckTime: Date | null = null;
-let checkInterval: NodeJS.Timeout | null = null;
-
-/**
- * Task Manager service that periodically checks for tasks that need to be resumed
- * based on their resumeAfter timestamp
- */
 export class TaskManager {
-  /**
-   * Start the task manager service
-   */
-  static start() {
-    if (isRunning) {
-      console.log("Task Manager is already running");
-      return;
+  static async startTaskResumptionScheduler() {
+    const checkAndResumeTasks = async () => {
+      try {
+        const tasksToResume = await prisma.task.findMany({
+          where: {
+            status: 'WAITING_FOR_RESPONSE',
+            metadata: {
+              path: ['resumeAfter'],
+              lte: new Date().toISOString()
+            }
+          },
+          include: { steps: true }
+        });
+
+        const typedTasks = tasksToResume.map(task => {
+          const metadata = task.metadata as TaskMetadata || {};
+          return {
+            ...task,
+            currentStep: metadata.currentStep || 1,
+            steps: task.steps.map((step, index) => ({
+              ...step,
+              stepNumber: index + 1,
+              metadata: step.metadata as TaskStepMetadata || {}
+            })),
+            metadata
+          } as TaskWithSteps;
+        });
+
+        await Promise.all(typedTasks.map(task => this.resumeTask(task)));
+      } catch (error) {
+        console.error('[TaskManager] Error in task resumption scheduler:', error);
+      } finally {
+        setTimeout(checkAndResumeTasks, CHECK_INTERVAL);
+      }
+    };
+
+    checkAndResumeTasks();
+  }
+
+  static async resumeTask(task: TaskWithSteps) {
+    const metadata = task.metadata || {};
+    
+    await prisma.task.update({
+      where: { id: task.id },
+      data: {
+        status: 'IN_PROGRESS',
+        metadata: {
+          ...metadata,
+          waitingFor: undefined,
+          waitingSince: undefined,
+          resumeAfter: undefined
+        }
+      }
+    });
+
+    if (task.steps?.length) {
+      await Promise.all(
+        task.steps
+          .filter(step => step.status === 'WAITING_FOR_RESPONSE')
+          .map(step => prisma.taskStep.update({
+            where: { id: step.id },
+            data: {
+              status: 'IN_PROGRESS',
+              metadata: {
+                ...(step.metadata as TaskStepMetadata || {}),
+                waitingFor: undefined,
+                waitingSince: undefined
+              }
+            }
+          }))
+      );
+    }
+    
+    return true;
+  }
+
+  static async manuallyResumeTask(taskId: string) {
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      include: { steps: true }
+    });
+
+    if (!task) throw new Error(`Task ${taskId} not found`);
+    
+    const metadata = task.metadata as TaskMetadata || {};
+    if (!metadata.waitingFor || !metadata.waitingSince) {
+      throw new Error(`Task ${taskId} is not in a waiting state`);
     }
 
-    console.log("Starting Task Manager service");
-    isRunning = true;
-    
-    // Run an initial check
-    this.checkWaitingTasks();
-    
-    // Set up the interval for periodic checks
-    checkInterval = setInterval(() => {
-      this.checkWaitingTasks();
-    }, CHECK_INTERVAL);
+    const typedTask = {
+      ...task,
+      currentStep: metadata.currentStep || 1,
+      steps: task.steps.map((step, index) => ({
+        ...step,
+        stepNumber: index + 1,
+        metadata: step.metadata as TaskStepMetadata || {}
+      })),
+      metadata
+    } as TaskWithSteps;
+
+    return this.resumeTask(typedTask);
   }
-  
-  /**
-   * Stop the task manager service
-   */
-  static stop() {
-    if (!isRunning) {
-      console.log("Task Manager is not running");
-      return;
-    }
-    
-    console.log("Stopping Task Manager service");
-    
-    if (checkInterval) {
-      clearInterval(checkInterval);
-      checkInterval = null;
-    }
-    
-    isRunning = false;
-  }
-  
-  /**
-   * Get the current status of the task manager
-   */
-  static getStatus() {
-    return {
-      isRunning,
-      lastCheckTime,
-    };
-  }
-  
-  /**
-   * Check for tasks that are in a waiting state and need to be resumed
-   */
-  static async checkWaitingTasks() {
-    try {
-      console.log("Checking for waiting tasks that need to be resumed");
-      lastCheckTime = new Date();
-      
-      // Find tasks that are waiting and have a resumeAfter time in the past
-      const tasksToResume = await prisma.task.findMany({
-        where: {
-          status: TaskStatus.WAITING_FOR_RESPONSE,
-          resumeAfter: {
-            not: null,
-            lt: new Date(), // resumeAfter is in the past
-          },
-        },
-        include: {
-          steps: true,
-        },
-      });
-      
-      console.log(`Found ${tasksToResume.length} tasks to resume`);
-      
-      // Process each task
-      for (const task of tasksToResume) {
-        await this.resumeTask(task);
-      }
-      
-      return tasksToResume;
-    } catch (error) {
-      console.error("Error checking waiting tasks:", error);
-      return [];
-    }
-  }
-  
-  /**
-   * Resume a task that was in a waiting state
-   */
-  static async resumeTask(task: TaskWithSteps) {
-    try {
-      console.log(`Resuming task ${task.id}: ${task.title}`);
-      
-      // Update the task metadata with auto-resume information
-      const updatedMetadata: JsonValue = typeof task.metadata === 'object' && task.metadata !== null
-        ? {
-            ...task.metadata as Record<string, unknown>,
-            autoResumed: true,
-            autoResumeTime: new Date().toISOString(),
-            waitedFor: task.waitingFor,
-            waitingSince: task.waitingSince?.toISOString(),
-          }
-        : {
-            autoResumed: true,
-            autoResumeTime: new Date().toISOString(),
-            waitedFor: task.waitingFor,
-            waitingSince: task.waitingSince?.toISOString(),
-          };
-      
-      // Update the task
-      await prisma.task.update({
-        where: {
-          id: task.id,
-        },
-        data: {
-          status: TaskStatus.IN_PROGRESS,
-          waitingFor: null,
-          waitingSince: null,
-          resumeAfter: null,
-          metadata: updatedMetadata,
-        },
-      });
-      
-      // If the task has steps, update the current step as well
-      if (task.steps && task.steps.length > 0) {
-        const currentStep = task.steps.find((step: TaskStepWithMetadata) => step.stepNumber === task.currentStep);
-        
-        if (currentStep) {
-          const stepMetadata: JsonValue = typeof currentStep.metadata === 'object' && currentStep.metadata !== null
-            ? {
-                ...currentStep.metadata as Record<string, unknown>,
-                autoResumed: true,
-                autoResumeTime: new Date().toISOString(),
-                waitedFor: currentStep.waitingFor,
-                waitingSince: currentStep.waitingSince?.toISOString(),
-              }
-            : {
-                autoResumed: true,
-                autoResumeTime: new Date().toISOString(),
-                waitedFor: currentStep.waitingFor,
-                waitingSince: currentStep.waitingSince?.toISOString(),
-              };
-          
-          await prisma.taskStep.update({
-            where: {
-              id: currentStep.id,
-            },
-            data: {
-              status: TaskStatus.IN_PROGRESS,
-              waitingFor: null,
-              waitingSince: null,
-              resumeAfter: null,
-              metadata: stepMetadata,
-            },
-          });
+
+  static async getResumableTasks(): Promise<TaskWithSteps[]> {
+    const tasks = await prisma.task.findMany({
+      where: {
+        status: 'WAITING_FOR_RESPONSE',
+        metadata: {
+          path: ['resumeAfter'],
+          lte: new Date().toISOString()
         }
-      }
-      
-      console.log(`Successfully resumed task ${task.id}`);
-      return true;
-    } catch (error) {
-      console.error(`Error resuming task ${task.id}:`, error);
-      return false;
-    }
+      },
+      include: { steps: true }
+    });
+
+    return tasks.map(task => {
+      const metadata = task.metadata as TaskMetadata || {};
+      return {
+        ...task,
+        currentStep: metadata.currentStep || 1,
+        steps: task.steps.map((step, index) => ({
+          ...step,
+          stepNumber: index + 1,
+          metadata: step.metadata as TaskStepMetadata || {}
+        })),
+        metadata
+      } as TaskWithSteps;
+    });
   }
-  
-  /**
-   * Manually resume a specific task
-   */
-  static async manuallyResumeTask(taskId: string, response?: string) {
-    try {
-      // Find the task
-      const task = await prisma.task.findUnique({
-        where: {
-          id: taskId,
-          status: TaskStatus.WAITING_FOR_RESPONSE,
-        },
-        include: {
-          steps: true,
-        },
-      });
-      
-      if (!task) {
-        throw new Error("Task not found or not in waiting state");
-      }
-      
-      // Update the task metadata with manual resume information
-      const updatedMetadata: JsonValue = typeof task.metadata === 'object' && task.metadata !== null
-        ? {
-            ...task.metadata as Record<string, unknown>,
-            manuallyResumed: true,
-            manualResumeTime: new Date().toISOString(),
-            userResponse: response || null,
-            waitedFor: task.waitingFor,
-            waitingSince: task.waitingSince?.toISOString(),
-          }
-        : {
-            manuallyResumed: true,
-            manualResumeTime: new Date().toISOString(),
-            userResponse: response || null,
-            waitedFor: task.waitingFor,
-            waitingSince: task.waitingSince?.toISOString(),
-          };
-      
-      // Add response if provided
-      if (response !== undefined && typeof updatedMetadata === 'object' && updatedMetadata !== null) {
-        const metadataObj = updatedMetadata as JsonObject;
-        const existingResponses = Array.isArray(metadataObj.responses) ? metadataObj.responses : [];
-        
-        metadataObj.responses = [
-          ...existingResponses,
-          {
-            timestamp: new Date().toISOString(),
-            response,
-            waitedFor: task.waitingFor,
-          }
-        ];
-      }
-      
-      // Update the task
-      await prisma.task.update({
-        where: {
-          id: taskId,
-        },
-        data: {
-          status: TaskStatus.IN_PROGRESS,
-          waitingFor: null,
-          waitingSince: null,
-          resumeAfter: null,
-          metadata: updatedMetadata,
-        },
-      });
-      
-      // If the task has steps, update the current step as well
-      if (task.steps && task.steps.length > 0) {
-        const currentStep = task.steps.find((step: TaskStepWithMetadata) => step.stepNumber === task.currentStep);
-        
-        if (currentStep) {
-          const stepMetadata: JsonValue = typeof currentStep.metadata === 'object' && currentStep.metadata !== null
-            ? {
-                ...currentStep.metadata as Record<string, unknown>,
-                manuallyResumed: true,
-                manualResumeTime: new Date().toISOString(),
-                userResponse: response || null,
-                waitedFor: currentStep.waitingFor,
-                waitingSince: currentStep.waitingSince?.toISOString(),
-              }
-            : {
-                manuallyResumed: true,
-                manualResumeTime: new Date().toISOString(),
-                userResponse: response || null,
-                waitedFor: currentStep.waitingFor,
-                waitingSince: currentStep.waitingSince?.toISOString(),
-              };
-          
-          // Add response if provided
-          if (response !== undefined && typeof stepMetadata === 'object' && stepMetadata !== null) {
-            const metadataObj = stepMetadata as JsonObject;
-            const existingResponses = Array.isArray(metadataObj.responses) ? metadataObj.responses : [];
-            
-            metadataObj.responses = [
-              ...existingResponses,
-              {
-                timestamp: new Date().toISOString(),
-                response,
-                waitedFor: currentStep.waitingFor,
-              }
-            ];
-          }
-          
-          await prisma.taskStep.update({
-            where: {
-              id: currentStep.id,
-            },
-            data: {
-              status: TaskStatus.IN_PROGRESS,
-              waitingFor: null,
-              waitingSince: null,
-              resumeAfter: null,
-              metadata: stepMetadata,
-            },
-          });
-        }
-      }
-      
-      return true;
-    } catch (error) {
-      console.error(`Error manually resuming task ${taskId}:`, error);
-      return false;
-    }
+
+  static async resumeReadyTasks(): Promise<TaskWithSteps[]> {
+    const tasks = await this.getResumableTasks();
+    await Promise.all(tasks.map(task => this.resumeTask(task)));
+    return tasks;
+  }
+
+  static async updateTaskMetadata(taskId: string, metadata: TaskMetadata) {
+    return prisma.task.update({
+      where: { id: taskId },
+      data: { metadata }
+    });
+  }
+
+  static async updateStepMetadata(stepId: string, metadata: TaskStepMetadata) {
+    return prisma.taskStep.update({
+      where: { id: stepId },
+      data: { metadata }
+    });
   }
 }
