@@ -30,30 +30,6 @@
         "x-next-revalidate-tag-token"
       ]
     },
-    "/": {
-      "experimentalBypassFor": [
-        {
-          "type": "header",
-          "key": "Next-Action"
-        },
-        {
-          "type": "header",
-          "key": "content-type",
-          "value": "multipart/form-data;.*"
-        }
-      ],
-      "initialRevalidateSeconds": false,
-      "srcRoute": "/",
-      "dataRoute": "/index.rsc",
-      "allowHeader": [
-        "host",
-        "x-matched-path",
-        "x-prerender-revalidate",
-        "x-prerender-revalidate-if-generated",
-        "x-next-revalidated-tags",
-        "x-next-revalidate-tag-token"
-      ]
-    },
     "/login": {
       "experimentalBypassFor": [
         {
@@ -77,13 +53,37 @@
         "x-next-revalidated-tags",
         "x-next-revalidate-tag-token"
       ]
+    },
+    "/": {
+      "experimentalBypassFor": [
+        {
+          "type": "header",
+          "key": "Next-Action"
+        },
+        {
+          "type": "header",
+          "key": "content-type",
+          "value": "multipart/form-data;.*"
+        }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/",
+      "dataRoute": "/index.rsc",
+      "allowHeader": [
+        "host",
+        "x-matched-path",
+        "x-prerender-revalidate",
+        "x-prerender-revalidate-if-generated",
+        "x-next-revalidated-tags",
+        "x-next-revalidate-tag-token"
+      ]
     }
   },
   "dynamicRoutes": {},
   "notFoundRoutes": [],
   "preview": {
-    "previewModeId": "d158ff669b26f590ded5db9fa51bf106",
-    "previewModeSigningKey": "f79cc0dfa2267267153cc2134a562a4f5048489ba6522cf7dbf01bb60fe62c15",
-    "previewModeEncryptionKey": "ab6ca5811b60f8933ea1c0e045f6327fc9d96f9854f0235edb3eed3ac3c7f506"
+    "previewModeId": "6794bb0b9f3390952d18e080774255fa",
+    "previewModeSigningKey": "3e75d3e99fc534a1e5dc1aa2817f1a72cd64c3ee89a3d620e5e4ccbf7e530908",
+    "previewModeEncryptionKey": "a1ea579197e93beb019ba7e730c03de90909a538c788e3993c030c3183be4400"
   }
 }
