@@ -1,28 +1,16 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "package.json",
-      "use": "@vercel/nextjs",
-      "config": {
-        "distDir": ".next"
-      }
-    }
-  ],
   "build": {
     "env": {
       "NODE_ENV": "production"
     }
   },
-  "routes": [
+  "builds": [
     {
-      "src": "/api/(.*)",
-      "dest": "/api/$1",
-      "methods": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-      "headers": {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
-        "Access-Control-Allow-Headers": "X-Requested-With, Content-Type, Authorization"
+      "src": "package.json",
+      "use": "@vercel/next",
+      "config": {
+        "distDir": ".next"
       }
     }
   ]
